@@ -5,17 +5,17 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  discussions: write
+
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    
+  build-windows:
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
 
-    - name: Create Executable
+    - name: Create Windows Executable
       uses: sayyid5416/pyinstaller@v1
       with:
         spec: 'main.py'
@@ -25,13 +25,76 @@ jobs:
           --onefile,
           --windowed,
           --name "EXR Matte Embed",
-          --icon "${{ matrix.os == 'windows-latest' && 'images/icon.ico' || 'images/icon.icns' }}"
-        upload_exe_with_name: 'EXR-Matte-Embed-${{ matrix.os }}'
+          --icon "images/icon.ico"
+        upload_exe_with_name: 'EXR-Matte-Embed-windows-x64'
+
+  build-macos:
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        brew install create-dmg
+
+    - name: Create macOS App Bundle
+      run: |
+        # Create architecture-specific build
+        arch -arch ${{ matrix.arch }} python -m PyInstaller \
+          --windowed \
+          --name "EXR Matte Embed" \
+          --icon "images/icon.icns" \
+          --add-data "images:images" \
+          main.py
+
+        # Rename the .app bundle to include architecture
+        mv "dist/EXR Matte Embed.app" "dist/EXR Matte Embed (${{ matrix.arch }}).app"
+
+    - name: Create DMG
+      run: |
+        create-dmg \
+          --volname "EXR Matte Embed" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "EXR Matte Embed (${{ matrix.arch }}).app" 200 190 \
+          --hide-extension "EXR Matte Embed (${{ matrix.arch }}).app" \
+          --app-drop-link 600 185 \
+          --skip-jenkins \
+          "dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg" \
+          "dist/EXR Matte Embed (${{ matrix.arch }}).app"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: EXR-Matte-Embed-macos-${{ matrix.arch }}
+        path: dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v2
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startswith(github.ref, 'refs/tags/')
       with:
-        files: ${{ steps.pyinstaller-build.outputs.executable_path }}/*
+        files: |
+          EXR-Matte-Embed-windows-x64/*
+          EXR-Matte-Embed-macos-x86_64/*
+          EXR-Matte-Embed-macos-arm64/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
