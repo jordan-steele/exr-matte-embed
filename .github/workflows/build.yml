@@ -28,52 +28,27 @@ jobs:
           --icon "images/icon.ico"
         upload_exe_with_name: 'EXR-Matte-Embed-windows-x64'
 
-  build-macos:
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            python-arch: ''
-          - arch: x86_64
-            python-arch: 'x86_64'
-    runs-on: macos-latest
+  build-macos-intel:
+    runs-on: macos-13
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python for x86_64
-      if: matrix.arch == 'x86_64'
-      run: |
-        curl -L -o python.pkg https://www.python.org/ftp/python/3.9.7/python-3.9.7-macosx10.9.pkg
-        sudo installer -pkg python.pkg -target /
-
-    - name: Set up Python for arm64
-      if: matrix.arch == 'arm64'
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
     - name: Install dependencies
       run: |
-        if [ "${{ matrix.arch }}" = "x86_64" ]; then
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.9/bin/python3 -m pip install --upgrade pip
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.9/bin/python3 -m pip install -r requirements.txt
-          arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.9/bin/python3 -m pip install pyinstaller
-        else
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
-        fi
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
         brew install create-dmg
 
     - name: Create macOS App Bundle
       run: |
-        if [ "${{ matrix.arch }}" = "x86_64" ]; then
-          PYTHON_PATH=/Library/Frameworks/Python.framework/Versions/3.9/bin/python3
-        else
-          PYTHON_PATH=python
-        fi
-        
-        arch -arch ${{ matrix.arch }} $PYTHON_PATH -m PyInstaller \
+        python -m PyInstaller \
+          --windowed \
           --name "EXR Matte Embed" \
           --icon "images/icon.icns" \
           --add-data "images:images" \
@@ -90,17 +65,63 @@ jobs:
           --hide-extension "EXR Matte Embed.app" \
           --app-drop-link 600 185 \
           --skip-jenkins \
-          "dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg" \
+          "dist/EXR-Matte-Embed-macos-intel.dmg" \
           "dist/EXR Matte Embed.app"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: EXR-Matte-Embed-macos-${{ matrix.arch }}
-        path: dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg
+        name: EXR-Matte-Embed-macos-intel
+        path: dist/EXR-Matte-Embed-macos-intel.dmg
+
+  build-macos-apple-silicon:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        brew install create-dmg
+
+    - name: Create macOS App Bundle
+      run: |
+        python -m PyInstaller \
+          --windowed \
+          --name "EXR Matte Embed" \
+          --icon "images/icon.icns" \
+          --add-data "images:images" \
+          main.py
+
+    - name: Create DMG
+      run: |
+        create-dmg \
+          --volname "EXR Matte Embed" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "EXR Matte Embed.app" 200 190 \
+          --hide-extension "EXR Matte Embed.app" \
+          --app-drop-link 600 185 \
+          --skip-jenkins \
+          "dist/EXR-Matte-Embed-macos-apple-silicon.dmg" \
+          "dist/EXR Matte Embed.app"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: EXR-Matte-Embed-macos-apple-silicon
+        path: dist/EXR-Matte-Embed-macos-apple-silicon.dmg
 
   create-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos-intel, build-macos-apple-silicon]
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
@@ -112,7 +133,7 @@ jobs:
       with:
         files: |
           EXR-Matte-Embed-windows-x64/*
-          EXR-Matte-Embed-macos-x86_64/*
-          EXR-Matte-Embed-macos-arm64/*
+          EXR-Matte-Embed-macos-intel/*
+          EXR-Matte-Embed-macos-apple-silicon/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
