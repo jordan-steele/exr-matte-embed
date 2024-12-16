@@ -13,7 +13,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Create Windows Executable
       uses: sayyid5416/pyinstaller@v1
@@ -34,7 +34,7 @@ jobs:
         arch: [x86_64, arm64]
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v2
@@ -76,7 +76,7 @@ jobs:
           "dist/EXR Matte Embed (${{ matrix.arch }}).app"
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: EXR-Matte-Embed-macos-${{ matrix.arch }}
         path: dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
