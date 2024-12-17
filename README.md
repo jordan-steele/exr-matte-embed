@@ -1,10 +1,10 @@
 <img src="images/icon.png" alt="EXR Matte Embed Logo" width="128" height="128">
 
-# EXR Matte Embedding Tool
+# EXR Matte Embed
 
 A Python-based tool for batch embedding matte/mask sequences into EXR files. This tool allows you to automatically combine your base EXR sequences with corresponding matte sequences, embedding the mattes as additional channels within the original EXRs.
 
-![EXR Matte Embedding Tool Interface](images/screenshot.png)
+![EXR Matte Embed Interface](images/screenshot.png)
 
 ## Features
 

@@ -36,8 +36,7 @@ class ToolTip:
 class EXRProcessorGUI:
     def __init__(self, master, processor):
         self.master = master
-        self.processor = processor  # Instance of EXRProcessor class
-        master.title("Batch Embed EXR Mattes")
+        self.processor = processor
         master.geometry("726x400")
 
         # Initialize variables
