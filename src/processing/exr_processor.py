@@ -15,20 +15,22 @@ class EXRProcessor:
         pairs = []
         if rgb_mode:
             for root, dirs, files in os.walk(main_folder):
-                if root.endswith('_matteR'):
-                    base_folder = root[:-7]  # Remove '_matteR'
+                if any(root.endswith(suffix) for suffix in ['_matteR', '_matteG', '_matteB', '_matteA']):
+                    for suffix in ['_matteR', '_matteG', '_matteB', '_matteA']:
+                        if root.endswith(suffix):
+                            base_folder = root[:-len(suffix)]
+                            break
+                    
                     if not os.path.exists(base_folder):
                         continue
                         
-                    matte_folders = {
-                        'R': root,
-                        'G': root[:-1] + 'G',
-                        'B': root[:-1] + 'B',
-                        'A': root[:-1] + 'A'
-                    }
-                    
-                    # Check if all matte folders exist
-                    if not all(os.path.exists(folder) for folder in matte_folders.values()):
+                    matte_folders = {}
+                    for channel in ['R', 'G', 'B', 'A']:
+                        potential_folder = base_folder + f'_matte{channel}'
+                        if os.path.exists(potential_folder):
+                            matte_folders[channel] = potential_folder
+
+                    if not matte_folders:
                         continue
 
                     base_files = sorted([f for f in os.listdir(base_folder) if f.endswith('.exr')])
@@ -47,10 +49,10 @@ class EXRProcessor:
                         'base_folder': base_folder,
                         'matte_folders': matte_folders,
                         'base_files': base_files,
-                        'matte_files': matte_files
+                        'matte_files': matte_files,
+                        'channels': list(matte_folders.keys())
                     })
         else:
-            # Original single matte logic
             for root, dirs, files in os.walk(main_folder):
                 if root.endswith('_matte'):
                     base_folder = root[:-6]
@@ -94,16 +96,18 @@ class EXRProcessor:
 
         if rgb_mode:
             matte_channels = {}
-            for channel in ['R', 'G', 'B', 'A']:
+            available_channels = list(matte_info.keys())
+
+            for channel in available_channels:
                 try:
-                    matte_file = os.path.join(matte_info['matte_folders'][channel], matte_files[channel])
+                    matte_file = os.path.join(matte_info[channel], matte_files[channel])
                     exr_matte = OpenEXR.InputFile(matte_file)
                     matte_channels[channel] = exr_matte.channel('R', Imath.PixelType(Imath.PixelType.HALF))
                     exr_matte.close()
                 except Exception as e:
                     raise Exception(f"Error processing matte channel {channel}: {str(e)}")
 
-            for i, channel in enumerate(['R', 'G', 'B', 'A'], 1):
+            for i, channel in enumerate(available_channels, 1):
                 header_out['channels'][f'{matte_channel_name}.{i}'] = Imath.Channel(Imath.PixelType(Imath.PixelType.HALF))
                 channel_data[f'{matte_channel_name}.{i}'] = matte_channels[channel]
         else:
