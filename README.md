@@ -1,3 +1,5 @@
+<img src="images/icon.png" alt="EXR Matte Embed Logo" width="128" height="128">
+
 # EXR Matte Embedding Tool
 
 A Python-based tool for batch embedding matte/mask sequences into EXR files. This tool allows you to automatically combine your base EXR sequences with corresponding matte sequences, embedding the mattes as additional channels within the original EXRs.
@@ -15,6 +17,14 @@ A Python-based tool for batch embedding matte/mask sequences into EXR files. Thi
 - Cross-platform support (Windows, macOS, Linux)
 
 ## Installation
+
+### Download Release
+The easiest way to get started is to download the pre-built application for your platform from the [Releases](https://github.com/yourusername/exr-matte-embed/releases) page:
+- Windows: Download and run the `.exe` installer
+- macOS: Download and mount the `.dmg` file, then drag the application to your Applications folder
+
+### Build from Source
+If you prefer to run from source:
 
 1. Clone the repository:
    ```bash
@@ -37,6 +47,27 @@ A Python-based tool for batch embedding matte/mask sequences into EXR files. Thi
    ```bash
    pip install -r requirements.txt
    ```
+
+4. Run the application:
+   ```bash
+   python main.py
+   ```
+
+## macOS Security Notes
+
+When running the application on macOS, you may encounter additional security measures since the application is not signed with an Apple Developer Certificate. To run the application:
+
+Method 1:
+1. Right-click (or Control-click) the application
+2. Select "Open" from the context menu
+3. Click "Open" in the security dialog that appears
+
+Alternative method:
+1. Navigate to System Settings > Privacy & Security
+2. Locate the security message about the blocked application
+3. Click "Open Anyway" to grant permission
+
+Note: These security prompts are part of macOS's Gatekeeper protection system. As this is an open-source application, you can review all source code in this repository to verify its safety and functionality.
 
 ## Usage
 
