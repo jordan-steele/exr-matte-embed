@@ -34,7 +34,7 @@ jobs:
         upload_exe_with_name: 'EXR-Matte-Embed-windows-x64'
 
   build-macos-intel:
-    runs-on: macos-12
+    runs-on: macos-13
     steps:
     - uses: actions/checkout@v4
 
@@ -66,8 +66,6 @@ jobs:
           --icon "images/icon.icns" \
           --add-data "images:images" \
           --hidden-import numpy \
-          --hidden-import numpy.core \
-          --hidden-import numpy.random \
           --copy-metadata OpenEXR \
           --copy-metadata numpy \
           main.py
@@ -125,8 +123,6 @@ jobs:
           --icon "images/icon.icns" \
           --add-data "images:images" \
           --hidden-import numpy \
-          --hidden-import numpy.core \
-          --hidden-import numpy.random \
           --copy-metadata OpenEXR \
           --copy-metadata numpy \
           main.py
