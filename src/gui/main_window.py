@@ -4,6 +4,7 @@ import threading
 import queue
 import multiprocessing
 from ..utils.config import Config
+import time
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -167,6 +168,9 @@ class EXRProcessorGUI:
         threading.Thread(target=self.update_progress, daemon=True).start()
 
     def update_progress(self):
+        start_time = time.time()
+        processed_files = 0
+        
         while not self.stop_event.is_set():
             try:
                 progress = self.progress_queue.get(timeout=0.1)
@@ -176,17 +180,36 @@ class EXRProcessorGUI:
                     self.progress_var.set(progress['progress'])
                     self.progress_text1.set(progress['status1'])
                     self.progress_text2.set(progress['status2'])
+                    if 'processed' in progress:
+                        processed_files = progress['processed']
                 self.master.update_idletasks()
             except queue.Empty:
                 continue
 
+        # Process finished - show completion summary
+        end_time = time.time()
+        total_time = end_time - start_time
+
         try:
             result = self.result_queue.get_nowait()
             if result.get('error_files'):
+                error_count = len(result['error_files'])
+                success_count = processed_files - error_count
+                
+                self.progress_text1.set(f"Processing completed with {error_count} errors")
+                self.progress_text2.set(f"Successfully processed: {success_count} files, Failed: {error_count} files")
+                self.timing_text.set(f"Total processing time: {total_time:.1f} seconds")
+                
                 messagebox.showwarning("Processing Errors", result['error_message'])
             else:
+                self.progress_text1.set("Processing completed successfully")
+                self.progress_text2.set(f"Total files processed: {processed_files}")
+                self.timing_text.set(f"Total processing time: {total_time:.1f} seconds")
+                
                 messagebox.showinfo("Success", "All files processed successfully.")
         except queue.Empty:
-            pass
+            self.progress_text1.set("Processing completed with unknown status")
+            self.progress_text2.set("")
+            self.timing_text.set("")
 
         self.process_button.config(state=tk.NORMAL)
