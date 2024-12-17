@@ -42,21 +42,23 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        cache: 'pip'
 
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: |
+        brew install python-tk@3.9
+        brew install create-dmg
+
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Display package info
+    - name: Verify Tkinter
       run: |
-        pip list
-        python -c "import numpy; print(numpy.__file__)"
-        python -c "import OpenEXR; print(OpenEXR.__file__)"
-
-    - name: Install create-dmg
-      run: brew install create-dmg
+        python -c "import tkinter; print('Tkinter version:', tkinter.TkVersion)"
+        python -c "import _tkinter; print('_tkinter location:', _tkinter.__file__)"
 
     - name: Create macOS App Bundle
       run: |
@@ -65,6 +67,8 @@ jobs:
           --name "EXR Matte Embed" \
           --icon "images/icon.icns" \
           --add-data "images:images" \
+          --hidden-import tkinter \
+          --hidden-import _tkinter \
           --hidden-import numpy \
           --copy-metadata OpenEXR \
           --copy-metadata numpy \
@@ -90,7 +94,7 @@ jobs:
         name: EXR-Matte-Embed-macos-intel
         path: dist/EXR-Matte-Embed-macos-intel.dmg
 
-  build-macos-apple:
+  build-macos-apple-silicon:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
@@ -138,17 +142,17 @@ jobs:
           --hide-extension "EXR Matte Embed.app" \
           --app-drop-link 600 185 \
           --skip-jenkins \
-          "dist/EXR-Matte-Embed-macos-apple.dmg" \
+          "dist/EXR-Matte-Embed-macos-apple-silicon.dmg" \
           "dist/EXR Matte Embed.app"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: EXR-Matte-Embed-macos-apple
-        path: dist/EXR-Matte-Embed-macos-apple.dmg
+        name: EXR-Matte-Embed-macos-apple-silicon
+        path: dist/EXR-Matte-Embed-macos-apple-silicon.dmg
 
   create-release:
-    needs: [build-windows, build-macos-intel, build-macos-apple]
+    needs: [build-windows, build-macos-intel, build-macos-apple-silicon]
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
@@ -161,6 +165,6 @@ jobs:
         files: |
           EXR-Matte-Embed-windows-x64/*
           EXR-Matte-Embed-macos-intel/*
-          EXR-Matte-Embed-macos-apple/*
+          EXR-Matte-Embed-macos-apple-silicon/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
