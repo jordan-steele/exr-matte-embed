@@ -38,16 +38,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install TCL/TK
+      run: |
+        brew install tcl-tk
+        echo "PATH=/usr/local/opt/tcl-tk/bin:$PATH" >> $GITHUB_ENV
+        echo "LDFLAGS=-L/usr/local/opt/tcl-tk/lib" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I/usr/local/opt/tcl-tk/include" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/local/opt/tcl-tk/lib/pkgconfig" >> $GITHUB_ENV
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
         cache: 'pip'
-
-    - name: Install system dependencies
-      run: |
-        brew install python-tk@3.9
-        brew install create-dmg
 
     - name: Install Python dependencies
       run: |
@@ -55,13 +58,18 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Verify Tkinter
+    - name: Verify Dependencies
       run: |
+        brew list tcl-tk
+        ls -l /usr/local/opt/tcl-tk/lib/
         python -c "import tkinter; print('Tkinter version:', tkinter.TkVersion)"
         python -c "import _tkinter; print('_tkinter location:', _tkinter.__file__)"
 
     - name: Create macOS App Bundle
       run: |
+        # Add TCL/TK to runtime path
+        export DYLD_LIBRARY_PATH=/usr/local/opt/tcl-tk/lib:$DYLD_LIBRARY_PATH
+        
         python -m PyInstaller \
           --windowed \
           --name "EXR Matte Embed" \
@@ -70,8 +78,12 @@ jobs:
           --hidden-import tkinter \
           --hidden-import _tkinter \
           --hidden-import numpy \
+          --hidden-import numpy.core \
+          --hidden-import numpy.random \
           --copy-metadata OpenEXR \
           --copy-metadata numpy \
+          --add-binary '/usr/local/opt/tcl-tk/lib/libtcl8.6.dylib:.' \
+          --add-binary '/usr/local/opt/tcl-tk/lib/libtk8.6.dylib:.' \
           main.py
 
     - name: Create DMG
