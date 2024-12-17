@@ -3,6 +3,7 @@ import OpenEXR
 import Imath
 import multiprocessing
 import time
+import sys
 
 class EXRProcessor:
     COMPRESSION_OPTIONS = ['none', 'rle', 'zip', 'zips', 'piz', 'pxr24', 'b44', 'b44a', 'dwaa']
@@ -138,6 +139,10 @@ class EXRProcessor:
 
     def process_sequences(self, folder, compression, rgb_mode, matte_channel_name, 
                         num_processes, progress_queue, result_queue, stop_event):
+        
+        if sys.platform == 'darwin':  # macOS
+            multiprocessing.set_start_method('fork', force=True)
+
         pairs = self.find_matching_pairs(folder, rgb_mode)
         if not pairs:
             progress_queue.put({'progress': 0, 'status1': "No matching pairs found.", 'status2': ""})
@@ -179,7 +184,12 @@ class EXRProcessor:
                 progress = (processed_files / total_files) * 100
                 status1 = f"Processing folder: {os.path.basename(base_folder)}"
                 status2 = f"Total progress: {processed_files}/{total_files}"
-                progress_queue.put({'progress': progress, 'status1': status1, 'status2': status2})
+                progress_queue.put({
+                    'progress': progress, 
+                    'status1': status1, 
+                    'status2': status2,
+                    'processed': processed_files
+                })
 
                 elapsed_time = time.time() - start_time
                 avg_time_per_file = elapsed_time / processed_files
@@ -197,3 +207,6 @@ class EXRProcessor:
             result_queue.put({'success': True})
 
         stop_event.set()
+
+if __name__ == '__main__':
+    multiprocessing.freeze_support()
