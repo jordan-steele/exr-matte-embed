@@ -1,4 +1,4 @@
-# Core dependencies
 OpenEXR
-numpy  # Required by OpenEXR
+numpy
 appdirs
+PySide6

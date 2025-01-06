@@ -1,214 +1,265 @@
-import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                              QLabel, QLineEdit, QPushButton, QComboBox, 
+                              QCheckBox, QSpinBox, QProgressBar, QFileDialog,
+                              QMessageBox, QToolTip)
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtGui import QIcon
 import threading
 import queue
 import multiprocessing
 from ..utils.config import Config
 import time
 
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tooltip = None
-        self.widget.bind('<Enter>', self.enter)
-        self.widget.bind('<Leave>', self.leave)
+class ProcessingWorker(QThread):
+    progressUpdated = Signal(dict)
+    finished = Signal(dict)
 
-    def enter(self, event=None):
-        x = self.widget.winfo_rootx()
-        y = self.widget.winfo_rooty()
-        x += 20
-        y += 20
-        
-        self.tooltip = tk.Toplevel(self.widget)
-        self.tooltip.wm_overrideredirect(True)
-        self.tooltip.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(self.tooltip, text=self.text, justify='left',
-                        borderwidth=1, padx=6, pady=6,
-                        wraplength=300)
-        label.pack()
-
-    def leave(self, event=None):
-        if self.tooltip:
-            self.tooltip.destroy()
-            self.tooltip = None
-
-class EXRProcessorGUI:
-    def __init__(self, master, processor):
-        self.master = master
+    def __init__(self, processor, processing_args):
+        super().__init__()
         self.processor = processor
-        master.geometry("726x400")
+        self.processing_args = processing_args
+        self.stop_event = processing_args['stop_event']
+
+    def run(self):
+        try:
+            # Run the processing
+            result = self.processor.process_sequences(**self.processing_args)
+            
+            # Emit the finished signal with the result
+            self.finished.emit(result if result else {})
+            
+        except Exception as e:
+            # Handle any exceptions and emit finished signal with error info
+            self.finished.emit({
+                'error': True,
+                'error_message': str(e),
+                'error_files': []
+            })
+
+class EXRProcessorGUI(QMainWindow):
+    def __init__(self, processor):
+        super().__init__()
+        self.processor = processor
+        self.setFixedSize(726, 400)
 
         # Initialize variables
-        self.folder_path = tk.StringVar()
-        self.compression = tk.StringVar(value='piz')
-        self.rgb_mode = tk.BooleanVar(value=False)
-        self.matte_channel_name = tk.StringVar(value='matte')
-        self.num_processes = tk.IntVar(value=max(multiprocessing.cpu_count() // 2, 1))
+        self.folder_path = ""
+        self.compression = "piz"
+        self.rgb_mode = False
+        self.matte_channel_name = "matte"
+        self.num_processes = max(multiprocessing.cpu_count() // 2, 1)
 
         # Progress tracking variables
-        self.progress_var = tk.DoubleVar()
-        self.progress_text1 = tk.StringVar()
-        self.progress_text2 = tk.StringVar()
-        self.timing_text = tk.StringVar()
-
-        self.config = Config()
-        self.load_config()
-
-        # Create GUI elements
-        self.create_widgets()
-
-        # Initialize processing related attributes
-        self.processing_thread = None
         self.progress_queue = queue.Queue()
         self.result_queue = queue.Queue()
         self.stop_event = threading.Event()
 
+        self.config = Config()
+        self.load_config()
+
+        # Create central widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        self.layout = QVBoxLayout(central_widget)
+
+        # Create GUI elements
+        self.create_widgets()
+        
+        # Setup progress update timer
+        self.progress_timer = QTimer()
+        self.progress_timer.timeout.connect(self.update_progress)
+        self.start_time = None
+
     def load_config(self):
         config_data = self.config.load()
-        self.matte_channel_name.set(config_data['matte_channel_name'])
+        self.matte_channel_name = config_data['matte_channel_name']
 
     def save_config(self):
         config_data = {
-            'matte_channel_name': self.matte_channel_name.get()
+            'matte_channel_name': self.matte_channel_name_edit.text()
         }
         self.config.save(config_data)
 
     def create_widgets(self):
         # Folder selection
-        tk.Label(self.master, text="Select Folder:").grid(row=0, column=0, sticky='w', padx=10, pady=5)
-        tk.Entry(self.master, textvariable=self.folder_path, width=50).grid(row=0, column=1, padx=5, pady=5)
-        tk.Button(self.master, text="Browse", command=self.select_folder).grid(row=0, column=2, padx=5, pady=5)
+        folder_layout = QHBoxLayout()
+        folder_label = QLabel("Select Folder:")
+        self.folder_path_edit = QLineEdit()
+        self.folder_path_edit.setReadOnly(True)
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.select_folder)
+        folder_layout.addWidget(folder_label)
+        folder_layout.addWidget(self.folder_path_edit)
+        folder_layout.addWidget(browse_button)
+        self.layout.addLayout(folder_layout)
 
         # Compression
-        tk.Label(self.master, text="Compression:").grid(row=1, column=0, sticky='w', padx=10, pady=5)
-        compression_dropdown = ttk.Combobox(self.master, textvariable=self.compression, 
-                                          values=self.processor.COMPRESSION_OPTIONS)
-        compression_dropdown.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        compression_layout = QHBoxLayout()
+        compression_label = QLabel("Compression:")
+        self.compression_combo = QComboBox()
+        self.compression_combo.setMinimumWidth(150)
+        self.compression_combo.addItems(self.processor.COMPRESSION_OPTIONS)
+        self.compression_combo.setCurrentText(self.compression)
+        compression_layout.addWidget(compression_label)
+        compression_layout.addWidget(self.compression_combo)
+        compression_layout.addStretch()
+        self.layout.addLayout(compression_layout)
 
-        # RGB Matte Mode with tooltip
-        rgb_frame = tk.Frame(self.master)
-        rgb_frame.grid(row=2, column=0, columnspan=2, sticky='w', padx=10, pady=5)
-        
-        rgb_cb = tk.Checkbutton(rgb_frame, text="RGB Matte Mode", variable=self.rgb_mode)
-        rgb_cb.pack(side='left')
-        
-        help_canvas = tk.Canvas(rgb_frame, width=16, height=16, highlightthickness=0)
-        help_canvas.pack(side='left', padx=5)
-        help_canvas.create_oval(1, 1, 15, 15, width=1)
-        help_canvas.create_text(8, 8, text="?", font=("Arial", 8, "bold"))
-        
-        tooltip_text = ("RGB Matte Mode expects source files to be named with _matteR, _matteG, _matteB,\n"
-                       "and _matteA suffixes. It will embed four separate matte channels from these files.\n\n"
-                       "For example: SHOW_100_010_020_v001_matteR/frame.001.exr, SHOW_100_010_020_v001_matteG/frame.001.exr, etc.")
-        ToolTip(help_canvas, tooltip_text)
+        # RGB Matte Mode
+        rgb_layout = QHBoxLayout()
+        self.rgb_checkbox = QCheckBox("RGB Matte Mode")
+        help_text = ("RGB Matte Mode expects source files to be named with _matteR, _matteG, _matteB,\n"
+                    "and _matteA suffixes. It will embed four separate matte channels from these files.\n\n"
+                    "For example: SHOW_100_010_020_v001_matteR/frame.001.exr, SHOW_100_010_020_v001_matteG/frame.001.exr, etc.")
+        self.rgb_checkbox.setToolTip(help_text)
+
+        # Create a help label with custom styling
+        help_label = QLabel("(?)")
+        help_label.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 12px;
+                padding: 0 5px;
+            }
+        """)
+        help_label.setToolTip(help_text)
+
+        rgb_layout.addWidget(self.rgb_checkbox)
+        rgb_layout.addWidget(help_label)
+        rgb_layout.addStretch()
+        self.layout.addLayout(rgb_layout)
 
         # Matte Channel Name
-        tk.Label(self.master, text="Matte Channel Name:").grid(row=3, column=0, sticky='w', padx=10, pady=5)
-        matte_name_entry = tk.Entry(self.master, textvariable=self.matte_channel_name, width=20)
-        matte_name_entry.grid(row=3, column=1, sticky='w', padx=5, pady=5)
-        matte_name_entry.bind('<FocusOut>', lambda e: self.save_config())
+        matte_layout = QHBoxLayout()
+        matte_label = QLabel("Matte Channel Name:")
+        self.matte_channel_name_edit = QLineEdit(self.matte_channel_name)
+        self.matte_channel_name_edit.editingFinished.connect(self.save_config)
+        matte_layout.addWidget(matte_label)
+        matte_layout.addWidget(self.matte_channel_name_edit)
+        matte_layout.addStretch()
+        self.layout.addLayout(matte_layout)
 
         # Number of Processes
-        tk.Label(self.master, text="Number of Processes:").grid(row=4, column=0, sticky='w', padx=10, pady=5)
-        process_spinbox = tk.Spinbox(self.master, from_=1, to=multiprocessing.cpu_count(), 
-                                   textvariable=self.num_processes, width=5)
-        process_spinbox.grid(row=4, column=1, sticky='w', padx=5, pady=5)
+        process_layout = QHBoxLayout()
+        process_label = QLabel("Number of Processes:")
+        self.process_spinbox = QSpinBox()
+        self.process_spinbox.setMinimumWidth(70)
+        self.process_spinbox.setRange(1, multiprocessing.cpu_count())
+        self.process_spinbox.setValue(self.num_processes)
+        process_layout.addWidget(process_label)
+        process_layout.addWidget(self.process_spinbox)
+        process_layout.addStretch()
+        self.layout.addLayout(process_layout)
 
         # Process Button
-        self.process_button = tk.Button(self.master, text="Process", command=self.start_processing)
-        self.process_button.grid(row=5, column=1, pady=20)
+        self.process_button = QPushButton("Process")
+        self.process_button.clicked.connect(self.start_processing)
+        self.layout.addWidget(self.process_button, alignment=Qt.AlignCenter)
 
         # Progress Bar and Labels
-        self.progress_bar = ttk.Progressbar(self.master, variable=self.progress_var, maximum=100)
-        self.progress_bar.grid(row=6, column=0, columnspan=3, sticky='ew', padx=10, pady=5)
+        self.progress_bar = QProgressBar()
+        self.progress_label1 = QLabel()
+        self.progress_label2 = QLabel()
+        self.timing_label = QLabel()
+        
+        self.layout.addWidget(self.progress_bar)
+        self.layout.addWidget(self.progress_label1)
+        self.layout.addWidget(self.progress_label2)
+        self.layout.addWidget(self.timing_label)
+        
+        self.layout.addStretch()
 
-        self.progress_label1 = tk.Label(self.master, textvariable=self.progress_text1, anchor='w')
-        self.progress_label1.grid(row=7, column=0, columnspan=3, sticky='w', padx=10, pady=2)
-        self.progress_label2 = tk.Label(self.master, textvariable=self.progress_text2, anchor='w')
-        self.progress_label2.grid(row=8, column=0, columnspan=3, sticky='w', padx=10, pady=2)
-
-        self.timing_label = tk.Label(self.master, textvariable=self.timing_text, anchor='w')
-        self.timing_label.grid(row=9, column=0, columnspan=3, sticky='w', padx=10, pady=2)
+    def show_rgb_help(self):
+        help_text = ("RGB Matte Mode expects source files to be named with _matteR, _matteG, _matteB,\n"
+                    "and _matteA suffixes. It will embed four separate matte channels from these files.\n\n"
+                    "For example: SHOW_100_010_020_v001_matteR/frame.001.exr, SHOW_100_010_020_v001_matteG/frame.001.exr, etc.")
+        QMessageBox.information(self, "RGB Matte Mode Help", help_text)
 
     def select_folder(self):
-        folder = filedialog.askdirectory(title="Select the main folder containing EXR sequences")
+        folder = QFileDialog.getExistingDirectory(self, "Select the main folder containing EXR sequences")
         if folder:
-            self.folder_path.set(folder)
+            self.folder_path = folder
+            self.folder_path_edit.setText(folder)
 
     def start_processing(self):
-        main_folder = self.folder_path.get()
-        compression = self.compression.get()
-        rgb_mode = self.rgb_mode.get()
-
-        if not main_folder:
-            messagebox.showerror("Error", "Please select a folder.")
+        if not self.folder_path:
+            QMessageBox.critical(self, "Error", "Please select a folder.")
             return
 
-        self.process_button.config(state=tk.DISABLED)
+        self.process_button.setEnabled(False)
         self.stop_event.clear()
+        self.start_time = time.time()
         
         processing_args = {
-            'folder': main_folder,
-            'compression': compression,
-            'rgb_mode': rgb_mode,
-            'matte_channel_name': self.matte_channel_name.get(),
-            'num_processes': self.num_processes.get(),
+            'folder': self.folder_path,
+            'compression': self.compression_combo.currentText(),
+            'rgb_mode': self.rgb_checkbox.isChecked(),
+            'matte_channel_name': self.matte_channel_name_edit.text(),
+            'num_processes': self.process_spinbox.value(),
             'progress_queue': self.progress_queue,
             'result_queue': self.result_queue,
             'stop_event': self.stop_event
         }
         
-        self.processing_thread = threading.Thread(
-            target=self.processor.process_sequences,
-            kwargs=processing_args
-        )
-        self.processing_thread.start()
-        threading.Thread(target=self.update_progress, daemon=True).start()
+        self.worker = ProcessingWorker(self.processor, processing_args)
+        self.worker.finished.connect(self.processing_finished)
+        self.worker.start()
+        
+        self.progress_timer.start(100)  # Update progress every 100ms
 
     def update_progress(self):
-        start_time = time.time()
-        processed_files = 0
-        
-        while not self.stop_event.is_set():
-            try:
-                progress = self.progress_queue.get(timeout=0.1)
+        try:
+            while True:
+                progress = self.progress_queue.get_nowait()
                 if 'timing' in progress:
-                    self.timing_text.set(progress['timing'])
+                    self.timing_label.setText(progress['timing'])
                 else:
-                    self.progress_var.set(progress['progress'])
-                    self.progress_text1.set(progress['status1'])
-                    self.progress_text2.set(progress['status2'])
-                    if 'processed' in progress:
-                        processed_files = progress['processed']
-                self.master.update_idletasks()
-            except queue.Empty:
-                continue
+                    self.progress_bar.setValue(int(progress['progress']))
+                    self.progress_label1.setText(progress['status1'])
+                    self.progress_label2.setText(progress['status2'])
+        except queue.Empty:
+            pass
 
-        # Process finished - show completion summary
-        end_time = time.time()
-        total_time = end_time - start_time
-
+    def processing_finished(self):
+        self.progress_timer.stop()
+        self.process_button.setEnabled(True)
+        
         try:
             result = self.result_queue.get_nowait()
-            if result.get('error_files'):
-                error_count = len(result['error_files'])
-                success_count = processed_files - error_count
-                
-                self.progress_text1.set(f"Processing completed with {error_count} errors")
-                self.progress_text2.set(f"Successfully processed: {success_count} files, Failed: {error_count} files")
-                self.timing_text.set(f"Total processing time: {total_time:.1f} seconds")
-                
-                messagebox.showwarning("Processing Errors", result['error_message'])
+            print(result)
+            
+            if result.get('error'):
+                QMessageBox.critical(
+                    self,
+                    "Processing Error",
+                    f"An error occurred during processing:\n{result.get('error_message', 'Unknown error')}"
+                )
+            elif result.get('error_files') or result.get('warnings'):
+                status_message = ""
+                if result.get('warnings'):
+                    status_message = "Processing completed with warnings"
+                    if result.get('error_files'):
+                        status_message += " and errors"
+                else:
+                    status_message = "Processing completed with errors"
+                    
+                QMessageBox.warning(
+                    self,
+                    status_message,
+                    result['error_message']
+                )
             else:
-                self.progress_text1.set("Processing completed successfully")
-                self.progress_text2.set(f"Total files processed: {processed_files}")
-                self.timing_text.set(f"Total processing time: {total_time:.1f} seconds")
-                
-                messagebox.showinfo("Success", "All files processed successfully.")
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    "All files processed successfully."
+                )
         except queue.Empty:
-            self.progress_text1.set("Processing completed with unknown status")
-            self.progress_text2.set("")
-            self.timing_text.set("")
-
-        self.process_button.config(state=tk.NORMAL)
+            QMessageBox.warning(
+                self,
+                "Nothing Found to Process",
+                "Nothing Found to Process"
+            )
+        finally:
+            total_time = time.time() - self.start_time
+            self.timing_label.setText(f"Total processing time: {total_time:.1f} seconds")

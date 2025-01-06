@@ -13,6 +13,7 @@ class EXRProcessor:
 
     def find_matching_pairs(self, main_folder, rgb_mode=False):
         pairs = []
+        warnings = []
         if rgb_mode:
             for root, dirs, files in os.walk(main_folder):
                 if any(root.endswith(suffix) for suffix in ['_matteR', '_matteG', '_matteB', '_matteA']):
@@ -42,7 +43,7 @@ class EXRProcessor:
                     # Ensure all folders have the same number of files
                     file_counts = [len(files) for files in matte_files.values()]
                     if len(base_files) != file_counts[0] or len(set(file_counts)) != 1:
-                        print(f"Warning: Mismatch in number of files for {base_folder}")
+                        warnings.append(f"Mismatch in number of files for {base_folder}")
                         continue
 
                     pairs.append({
@@ -61,7 +62,7 @@ class EXRProcessor:
                         matte_files = sorted([f for f in os.listdir(root) if f.endswith('.exr')])
                         
                         if len(base_files) != len(matte_files):
-                            print(f"Warning: Mismatch in number of files for {base_folder}")
+                            warnings.append(f"Mismatch in number of files for {base_folder}")
                             continue
 
                         pairs.append({
@@ -70,7 +71,7 @@ class EXRProcessor:
                             'base_files': base_files,
                             'matte_files': matte_files
                         })
-        return pairs
+        return pairs, warnings
 
     def process_exr_file(self, base_folder, matte_info, base_file, matte_files, compression, rgb_mode, matte_channel_name):
         try:
@@ -147,7 +148,7 @@ class EXRProcessor:
         if sys.platform == 'darwin':  # macOS
             multiprocessing.set_start_method('fork', force=True)
 
-        pairs = self.find_matching_pairs(folder, rgb_mode)
+        pairs, warnings = self.find_matching_pairs(folder, rgb_mode)
         if not pairs:
             progress_queue.put({'progress': 0, 'status1': "No matching pairs found.", 'status2': ""})
             stop_event.set()
@@ -202,11 +203,25 @@ class EXRProcessor:
                     'timing': f"Elapsed: {elapsed_time:.2f}s, Avg: {avg_time_per_file:.2f}s/file, Est. remaining: {estimated_time_left:.2f}s"
                 })
 
-        if error_files:
-            error_message = "The following files encountered errors:\n\n"
-            for file, error in error_files:
-                error_message += f"{file}: {error}\n"
-            result_queue.put({'error_files': error_files, 'error_message': error_message})
+        if error_files or warnings:
+            error_message = ""
+            
+            if warnings:
+                error_message += "The following warnings were encountered:\n\n"
+                for warning in warnings:
+                    error_message += f"WARNING: {warning}\n"
+                error_message += "\n"
+                
+            if error_files:
+                error_message += "The following files encountered errors:\n\n"
+                for file, error in error_files:
+                    error_message += f"{file}: {error}\n"
+                    
+            result_queue.put({
+                'error_files': error_files,
+                'warnings': warnings,
+                'error_message': error_message
+            })
         else:
             result_queue.put({'success': True})
 
