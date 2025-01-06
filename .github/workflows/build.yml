@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release'
+        type: boolean
+        default: false
+        required: true
 
 permissions:
   contents: write
@@ -99,6 +106,7 @@ jobs:
 
   create-release:
     needs: [build-windows, build-macos]
+    if: startswith(github.ref, 'refs/tags/') || inputs.create_release
     runs-on: ubuntu-latest
     steps:
     - name: Download all artifacts
