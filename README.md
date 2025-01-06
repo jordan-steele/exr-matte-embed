@@ -23,7 +23,8 @@ The easiest way to get started is to download the pre-built application for your
 - Windows: Download and run the `.exe` installer
 - macOS: Download and mount the `.dmg` file, then drag the application to your Applications folder
 
-### Build from Source
+<details>
+<summary><b>Alternatively: Build from Source</b></summary>
 If you prefer to run from source:
 
 1. Clone the repository:
@@ -52,6 +53,7 @@ If you prefer to run from source:
    ```bash
    python main.py
    ```
+</details>
 
 ## macOS Security Notes
 
