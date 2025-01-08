@@ -46,6 +46,7 @@ jobs:
           --windowed `
           --name "EXR Matte Embed" `
           --icon "images/icon.ico" `
+          --add-data "images/icon.ico;images/icon.ico" `
           --hidden-import numpy `
           --copy-metadata OpenEXR `
           --copy-metadata numpy `
