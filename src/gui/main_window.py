@@ -8,7 +8,18 @@ import threading
 import queue
 import multiprocessing
 from ..utils.config import Config
-import time
+import time, sys, os
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 
 class ProcessingWorker(QThread):
     progressUpdated = Signal(dict)
@@ -39,6 +50,7 @@ class ProcessingWorker(QThread):
 class EXRProcessorGUI(QMainWindow):
     def __init__(self, processor):
         super().__init__()
+        self.setWindowIcon(QIcon(resource_path("images/icon.ico")))
         self.processor = processor
         self.setFixedSize(726, 400)
 
