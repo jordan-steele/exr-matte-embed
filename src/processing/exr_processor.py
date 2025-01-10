@@ -9,7 +9,12 @@ class EXRProcessor:
     COMPRESSION_OPTIONS = ['none', 'rle', 'zip', 'zips', 'piz', 'pxr24', 'b44', 'b44a', 'dwaa']
 
     def __init__(self):
-        pass
+        if sys.platform == 'darwin':  # macOS
+            multiprocessing.set_start_method('fork', force=True)
+        elif sys.platform == 'win32':  # Windows
+            multiprocessing.freeze_support()
+            multiprocessing.set_start_method('spawn', force=True)
+            os.environ['PYTHONUNBUFFERED'] = '1'
 
     def find_matching_pairs(self, main_folder, rgb_mode=False):
         pairs = []
@@ -144,9 +149,6 @@ class EXRProcessor:
 
     def process_sequences(self, folder, compression, rgb_mode, matte_channel_name, 
                         num_processes, progress_queue, result_queue, stop_event):
-        
-        if sys.platform == 'darwin':  # macOS
-            multiprocessing.set_start_method('fork', force=True)
 
         pairs, warnings = self.find_matching_pairs(folder, rgb_mode)
         if not pairs:
@@ -160,7 +162,12 @@ class EXRProcessor:
 
         start_time = time.time()
 
-        with multiprocessing.Pool(processes=num_processes) as pool:
+        if sys.platform == 'win32':
+            mp_context = multiprocessing.get_context('spawn')
+        else:
+            mp_context = multiprocessing
+
+        with mp_context.Pool(processes=num_processes) as pool:
             tasks = []
             for pair_index, pair in enumerate(pairs, 1):
                 base_folder = pair['base_folder']
@@ -229,3 +236,5 @@ class EXRProcessor:
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
+    if sys.platform == 'win32':
+        multiprocessing.set_start_method('spawn', force=True)
