@@ -123,6 +123,8 @@ jobs:
       with:
         name: EXR-Matte-Embed-macos-${{ matrix.arch }}
         path: dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg
+      env:
+        ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: 10
 
   # create-release:
   #   needs: [build-windows, build-macos]
