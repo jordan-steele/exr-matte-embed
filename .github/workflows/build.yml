@@ -17,55 +17,55 @@ permissions:
   discussions: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
+  # build-windows:
+  #   runs-on: windows-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v4
+  #     with:
+  #       python-version: '3.9'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
+  #   - name: Install dependencies
+  #     run: |
+  #       python -m pip install --upgrade pip
+  #       pip install -r requirements.txt
+  #       pip install pyinstaller
 
-    - name: Display package info
-      run: |
-        pip list
-        python -c "import numpy; print(numpy.__file__)"
-        python -c "import OpenEXR; print(OpenEXR.__file__)"
+  #   - name: Display package info
+  #     run: |
+  #       pip list
+  #       python -c "import numpy; print(numpy.__file__)"
+  #       python -c "import OpenEXR; print(OpenEXR.__file__)"
 
-    - name: Create Windows Executable
-      run: |
-        python -m PyInstaller `
-          --onefile `
-          --windowed `
-          --name "EXR Matte Embed" `
-          --icon "images/icon.ico" `
-          --add-data "images/icon.ico;images/" `
-          --hidden-import numpy `
-          --copy-metadata OpenEXR `
-          --copy-metadata numpy `
-          main.py
+  #   - name: Create Windows Executable
+  #     run: |
+  #       python -m PyInstaller `
+  #         --onefile `
+  #         --windowed `
+  #         --name "EXR Matte Embed" `
+  #         --icon "images/icon.ico" `
+  #         --add-data "images/icon.ico;images/" `
+  #         --hidden-import numpy `
+  #         --copy-metadata OpenEXR `
+  #         --copy-metadata numpy `
+  #         main.py
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: EXR-Matte-Embed-windows-x64
-        path: dist/EXR Matte Embed.exe
+  #   - name: Upload Artifact
+  #     uses: actions/upload-artifact@v4
+  #     with:
+  #       name: EXR-Matte-Embed-windows-x64
+  #       path: dist/EXR Matte Embed.exe
 
   build-macos:
     strategy:
       matrix:
         include:
-          - runner: macos-13
+          - runner: self-hosted
             arch: intel
-          - runner: macos-14
-            arch: apple-silicon
+          # - runner: macos-14
+          #   arch: apple-silicon
     runs-on: ${{ matrix.runner }}
     steps:
     - uses: actions/checkout@v4
@@ -124,21 +124,21 @@ jobs:
         name: EXR-Matte-Embed-macos-${{ matrix.arch }}
         path: dist/EXR-Matte-Embed-macos-${{ matrix.arch }}.dmg
 
-  create-release:
-    needs: [build-windows, build-macos]
-    if: startswith(github.ref, 'refs/tags/') || inputs.create_release
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
+  # create-release:
+  #   needs: [build-windows, build-macos]
+  #   if: startswith(github.ref, 'refs/tags/') || inputs.create_release
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Download all artifacts
+  #     uses: actions/download-artifact@v4
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: startswith(github.ref, 'refs/tags/')
-      with:
-        files: |
-          EXR-Matte-Embed-windows-x64/*
-          EXR-Matte-Embed-macos-intel/*
-          EXR-Matte-Embed-macos-apple-silicon/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #   - name: Create Release
+  #     uses: softprops/action-gh-release@v1
+  #     if: startswith(github.ref, 'refs/tags/')
+  #     with:
+  #       files: |
+  #         EXR-Matte-Embed-windows-x64/*
+  #         EXR-Matte-Embed-macos-intel/*
+  #         EXR-Matte-Embed-macos-apple-silicon/*
+  #     env:
+  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
