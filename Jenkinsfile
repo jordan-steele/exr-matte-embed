@@ -276,6 +276,15 @@ pipeline {
                 }
             }
         }
+
+        stage('Update R2 Releases JSON') {
+            steps {
+                build job: 'Update R2 Releases', parameters: [
+                    string(name: 'BUCKET_ID', value: "${env.R2_BUCKET_NAME}"),
+                    string(name: 'BASE_PATH', value: 'exr-matte-embed')
+                ]
+            }
+        }
         
         stage('Create GitHub Release') {
             when {
@@ -362,28 +371,35 @@ EOF
             
             sh "aws --profile r2 s3 cp \"${artifactFile}\" s3://${env.R2_BUCKET_NAME}/${s3Path}"
         } else {
-            // Windows system
-            bat 'where aws || pip install awscli'
-            
+            // Windows system - simplified approach
             bat '''
                 @echo off
+                REM Activate virtual environment
+                call venv\\Scripts\\activate.bat
+                
+                REM Install AWS CLI if not present
+                pip install awscli
+                
+                REM Create AWS config directory
                 if not exist "%USERPROFILE%\\.aws" mkdir "%USERPROFILE%\\.aws"
                 
-                (
-                echo [profile r2]
-                echo region = auto
-                echo output = json
-                echo endpoint_url = https://%R2_ACCOUNT_ID%.r2.cloudflarestorage.com
-                ) > "%USERPROFILE%\\.aws\\config"
+                REM Create AWS config files
+                echo [profile r2] > "%USERPROFILE%\\.aws\\config"
+                echo region = auto >> "%USERPROFILE%\\.aws\\config"
+                echo output = json >> "%USERPROFILE%\\.aws\\config"
+                echo endpoint_url = https://%R2_ACCOUNT_ID%.r2.cloudflarestorage.com >> "%USERPROFILE%\\.aws\\config"
                 
-                (
-                echo [r2]
-                echo aws_access_key_id = %R2_ACCESS_KEY%
-                echo aws_secret_access_key = %R2_SECRET_KEY%
-                ) > "%USERPROFILE%\\.aws\\credentials"
+                echo [r2] > "%USERPROFILE%\\.aws\\credentials"
+                echo aws_access_key_id = %R2_ACCESS_KEY% >> "%USERPROFILE%\\.aws\\credentials"
+                echo aws_secret_access_key = %R2_SECRET_KEY% >> "%USERPROFILE%\\.aws\\credentials"
             '''
             
-            bat "aws --profile r2 s3 cp \"${artifactFile}\" s3://%R2_BUCKET_NAME%/${s3Path}"
+            // Execute AWS CLI through Python
+            bat """
+                @echo off
+                call venv\\Scripts\\activate.bat
+                python -m awscli --profile r2 s3 cp "${artifactFile}" s3://%R2_BUCKET_NAME%/${s3Path}
+            """
         }
     }
 }
