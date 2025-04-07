@@ -484,6 +484,13 @@ pipeline {
                     unstash 'macos-arm-dmg'
                     unstash 'windows-installer'
                     
+                    // Copy artifacts to the root directory (without 'dist/' prefix)
+                    sh """
+                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg" .
+                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg" .
+                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_windows.exe" .
+                    """
+                    
                     // Just use the provided release notes without Cloudflare links
                     def notesWithLinks = """${params.RELEASE_NOTES}"""
                     
@@ -508,9 +515,9 @@ pipeline {
                             repository: 'jordan-steele/exr-matte-embed',
                             tagName: releaseVersion,
                             uploadAssets: [
-                                [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg"],
-                                [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg"],
-                                [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_windows.exe", name: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe"]
+                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg"],
+                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg"],
+                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe", name: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe"]
                             ]
                         )
                     }
