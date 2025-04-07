@@ -5,6 +5,7 @@ pipeline {
     
     parameters {
         booleanParam(name: 'CREATE_RELEASE', defaultValue: false, description: 'Create a release')
+        booleanParam(name: 'OVERWRITE_EXISTING', defaultValue: false, description: 'Overwrite release if version already exists')
         text(name: 'RELEASE_NOTES', defaultValue: 'Release notes go here', description: 'Notes for this release')
     }
     
@@ -12,6 +13,7 @@ pipeline {
         R2_ACCOUNT_ID = credentials('r2-account-id')
         R2_BUCKET_NAME = credentials('r2-public-bucket')
         R2_PUBLIC_DOMAIN = credentials('r2-public-domain')
+        GITHUB_TOKEN = credentials('github-creds')
     }
     
     options {
@@ -41,15 +43,72 @@ pipeline {
                 }
             }
         }
+
+        stage('Check If Release Exists') {
+            steps {
+                script {
+                    def releaseExists = false
+                    def releaseVersion = "v${env.APP_VERSION}"
+                    
+                    // Check if the tag/release already exists on GitHub
+                    try {
+                        def response = sh(
+                            script: """
+                                curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${GITHUB_TOKEN}" \
+                                https://api.github.com/repos/jordan-steele/exr-matte-embed/releases/tags/${releaseVersion}
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        // If we get a 200 response, the release exists
+                        if (response == "200") {
+                            releaseExists = true
+                            echo "Release ${releaseVersion} already exists on GitHub!"
+                        } else {
+                            echo "Release ${releaseVersion} does not exist on GitHub."
+                        }
+                    } catch (Exception e) {
+                        // If there's an error, assume the release doesn't exist
+                        echo "Error checking release: ${e.message}"
+                        echo "Assuming release doesn't exist."
+                    }
+                    
+                    // Store the result for later stages
+                    env.RELEASE_EXISTS = releaseExists.toString()
+                    
+                    // If release exists and overwrite is not checked, abort the build
+                    if (releaseExists && !params.OVERWRITE_EXISTING) {
+                        error "Release ${releaseVersion} already exists and OVERWRITE_EXISTING is not selected. Aborting."
+                    } else if (releaseExists && params.OVERWRITE_EXISTING) {
+                        echo "Release ${releaseVersion} exists, but will be overwritten as requested."
+                        
+                        // Delete the existing release if we're going to overwrite it
+                        sh """
+                            # Get the release ID
+                            RELEASE_ID=\$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
+                                https://api.github.com/repos/jordan-steele/exr-matte-embed/releases/tags/${releaseVersion} | \
+                                grep -o '\"id\": [0-9]*' | head -1 | awk '{print \$2}')
+                            
+                            # Delete the release using its ID
+                            curl -X DELETE -H "Authorization: token ${GITHUB_TOKEN}" \
+                                https://api.github.com/repos/jordan-steele/exr-matte-embed/releases/\$RELEASE_ID
+                            
+                            # Delete the tag
+                            git push --delete origin ${releaseVersion} || echo "Tag may not exist or failed to delete"
+                        """
+                    }
+                }
+            }
+        }
         
         stage('Build All Platforms') {
             parallel {
-                stage('Build macOS') {
+                stage('Build macOS Intel') {
                     agent {
-                        label 'mini-mac-pro'  // Use Mac agent for macOS build
+                        label 'mini-mac-pro'  // Use Intel Mac agent for Intel build
                     }
                     stages {
-                        stage('Setup Python Environment (macOS)') {
+                        stage('Setup Python Environment (macOS Intel)') {
                             steps {
                                 sh '''
                                 # Create a virtual environment if it doesn't exist
@@ -64,7 +123,7 @@ pipeline {
                             }
                         }
                         
-                        stage('Install Dependencies (macOS)') {
+                        stage('Install Dependencies (macOS Intel)') {
                             steps {
                                 sh '''
                                 # Activate the virtual environment
@@ -77,7 +136,7 @@ pipeline {
                             }
                         }
                         
-                        stage('Display Package Info (macOS)') {
+                        stage('Display Package Info (macOS Intel)') {
                             steps {
                                 sh '''
                                 # Activate the virtual environment
@@ -91,13 +150,13 @@ pipeline {
                             }
                         }
                         
-                        stage('Install create-dmg (macOS)') {
+                        stage('Install create-dmg (macOS Intel)') {
                             steps {
                                 sh 'brew install create-dmg || echo "create-dmg is already installed"'
                             }
                         }
                         
-                        stage('Create macOS App Bundle') {
+                        stage('Create macOS Intel App Bundle') {
                             steps {
                                 sh '''
                                 # Activate the virtual environment
@@ -120,7 +179,7 @@ pipeline {
                             }
                         }
                         
-                        stage('Create DMG') {
+                        stage('Create DMG (Intel)') {
                             steps {
                                 sh """
                                 # Create DMG with version number
@@ -138,13 +197,13 @@ pipeline {
                             }
                         }
                         
-                        stage('Archive macOS Artifact') {
+                        stage('Archive macOS Intel Artifact') {
                             steps {
-                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg", name: 'macos-dmg'
+                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg", name: 'macos-intel-dmg'
                             }
                         }
                         
-                        stage('Upload macOS to Cloudflare R2') {
+                        stage('Upload macOS Intel to Cloudflare R2') {
                             steps {
                                 script {
                                     def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg"
@@ -153,8 +212,131 @@ pipeline {
                                     uploadToR2(artifactFile, s3Path)
                                     
                                     // Store the R2 URL for later use
-                                    env.MACOS_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
-                                    echo "Uploaded macOS build to R2: ${env.MACOS_R2_URL}"
+                                    env.MACOS_INTEL_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
+                                    echo "Uploaded macOS Intel build to R2: ${env.MACOS_INTEL_R2_URL}"
+                                }
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            cleanWs()
+                        }
+                    }
+                }
+                
+                stage('Build macOS Apple Silicon') {
+                    agent {
+                        label 'mac-studio'  // Use Apple Silicon agent for ARM build
+                    }
+                    stages {
+                        stage('Setup Python Environment (macOS ARM)') {
+                            steps {
+                                sh '''
+                                # Create a virtual environment if it doesn't exist
+                                python3 -m venv venv
+                                
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Upgrade pip in the virtual environment
+                                python -m pip install --upgrade pip
+                                '''
+                            }
+                        }
+                        
+                        stage('Install Dependencies (macOS ARM)') {
+                            steps {
+                                sh '''
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Install dependencies
+                                python -m pip install -r requirements.txt
+                                python -m pip install pyinstaller
+                                '''
+                            }
+                        }
+                        
+                        stage('Display Package Info (macOS ARM)') {
+                            steps {
+                                sh '''
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Display info about the environment
+                                python -m pip list
+                                python -c "import numpy; print(numpy.__file__)"
+                                python -c "import OpenEXR; print(OpenEXR.__file__)"
+                                python -c "import platform; print('Architecture:', platform.machine())"
+                                '''
+                            }
+                        }
+                        
+                        stage('Install create-dmg (macOS ARM)') {
+                            steps {
+                                sh 'brew install create-dmg || echo "create-dmg is already installed"'
+                            }
+                        }
+                        
+                        stage('Create macOS ARM App Bundle') {
+                            steps {
+                                sh '''
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Set deployment target
+                                export MACOSX_DEPLOYMENT_TARGET="12.0"
+                                
+                                # Create app bundle
+                                python -m PyInstaller \\
+                                  --windowed \\
+                                  --name "EXR Matte Embed" \\
+                                  --icon "images/icon.icns" \\
+                                  --add-data "images:images" \\
+                                  --hidden-import numpy \\
+                                  --copy-metadata OpenEXR \\
+                                  --copy-metadata numpy \\
+                                  main.py
+                                '''
+                            }
+                        }
+                        
+                        stage('Create DMG (ARM)') {
+                            steps {
+                                sh """
+                                # Create DMG with version number
+                                create-dmg \\
+                                  --volname "EXR Matte Embed ${APP_VERSION}" \\
+                                  --window-pos 200 120 \\
+                                  --window-size 800 400 \\
+                                  --icon-size 100 \\
+                                  --icon "EXR Matte Embed.app" 200 190 \\
+                                  --hide-extension "EXR Matte Embed.app" \\
+                                  --app-drop-link 600 185 \\
+                                  "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg" \\
+                                  "dist/EXR Matte Embed.app"
+                                """
+                            }
+                        }
+                        
+                        stage('Archive macOS ARM Artifact') {
+                            steps {
+                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg", name: 'macos-arm-dmg'
+                            }
+                        }
+                        
+                        stage('Upload macOS ARM to Cloudflare R2') {
+                            steps {
+                                script {
+                                    def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
+                                    def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
+                                    
+                                    uploadToR2(artifactFile, s3Path)
+                                    
+                                    // Store the R2 URL for later use
+                                    env.MACOS_ARM_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
+                                    echo "Uploaded macOS ARM build to R2: ${env.MACOS_ARM_R2_URL}"
                                 }
                             }
                         }
@@ -297,8 +479,9 @@ pipeline {
                     // Create directories for unstashed artifacts
                     sh "mkdir -p dist"
                     
-                    // Unstash artifacts from both platforms
-                    unstash 'macos-dmg'
+                    // Unstash artifacts from all platforms
+                    unstash 'macos-intel-dmg'
+                    unstash 'macos-arm-dmg'
                     unstash 'windows-installer'
                     
                     // Just use the provided release notes without Cloudflare links
@@ -307,7 +490,7 @@ pipeline {
                     // Create a release notes file
                     writeFile file: 'release-notes.md', text: notesWithLinks
                     
-                    // Create GitHub release with both assets
+                    // Create GitHub release with all assets
                     withCredentials([string(credentialsId: 'github-creds', variable: 'GITHUB_TOKEN')]) {
                         // Create GitHub release
                         createGitHubRelease(
@@ -319,13 +502,14 @@ pipeline {
                             draft: false
                         )
                         
-                        // Upload both assets to the release
+                        // Upload all assets to the release
                         uploadGithubReleaseAsset(
                             credentialId: 'github-creds',
                             repository: 'jordan-steele/exr-matte-embed',
                             tagName: releaseVersion,
                             uploadAssets: [
                                 [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg"],
+                                [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg"],
                                 [filePath: "dist/EXR-Matte-Embed_${env.APP_VERSION}_windows.exe", name: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe"]
                             ]
                         )
@@ -349,10 +533,20 @@ def uploadToR2(String artifactFile, String s3Path) {
         string(credentialsId: 'r2-secret-key', variable: 'R2_SECRET_KEY')
     ]) {
         if (isUnix()) {
-            // Unix system (macOS)
-            sh 'which aws || pip install awscli'
-            
+            // Unix system (macOS) - avoiding pip system install issues
             sh '''
+                # Create a dedicated virtual environment for AWS CLI to avoid system Python issues
+                python3 -m venv aws-venv || true
+                
+                # Activate the virtual environment
+                . aws-venv/bin/activate
+                
+                # Upgrade pip within virtual environment (safe to do)
+                python -m pip install --upgrade pip
+                
+                # Install AWS CLI in the virtual environment
+                python -m pip install awscli
+                
                 # Create AWS CLI profile for R2
                 mkdir -p ~/.aws
                 cat > ~/.aws/config << EOF
@@ -369,7 +563,11 @@ aws_secret_access_key = ${R2_SECRET_KEY}
 EOF
             '''
             
-            sh "aws --profile r2 s3 cp \"${artifactFile}\" s3://${env.R2_BUCKET_NAME}/${s3Path}"
+            // Use the virtual environment to run AWS CLI commands
+            sh """
+                . aws-venv/bin/activate
+                python -m awscli --profile r2 s3 cp \"${artifactFile}\" s3://${env.R2_BUCKET_NAME}/${s3Path}
+            """
         } else {
             // Windows system - simplified approach
             bat '''
