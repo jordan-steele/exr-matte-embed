@@ -93,8 +93,12 @@ pipeline {
                             curl -X DELETE -H "Authorization: token ${GITHUB_TOKEN}" \
                                 https://api.github.com/repos/jordan-steele/exr-matte-embed/releases/\$RELEASE_ID
                             
-                            # Delete the tag
-                            git push --delete origin ${releaseVersion} || echo "Tag may not exist or failed to delete"
+                            # Delete the tag - attempt remotely first
+                            git fetch
+                            git push https://\${GITHUB_TOKEN}@github.com/jordan-steele/exr-matte-embed.git --delete ${releaseVersion} || echo "Remote tag delete attempt completed"
+                            
+                            # Also try to delete local tag if it exists
+                            git tag -d ${releaseVersion} || echo "No local tag to delete"
                         """
                     }
                 }
