@@ -77,9 +77,9 @@ pipeline {
                     env.RELEASE_EXISTS = releaseExists.toString()
                     
                     // If release exists and overwrite is not checked, abort the build
-                    if (releaseExists && !params.OVERWRITE_EXISTING) {
+                    if (releaseExists && !params.OVERWRITE_EXISTING && params.CREATE_RELEASE) {
                         error "Release ${releaseVersion} already exists and OVERWRITE_EXISTING is not selected. Aborting."
-                    } else if (releaseExists && params.OVERWRITE_EXISTING) {
+                    } else if (releaseExists && params.OVERWRITE_EXISTING && params.CREATE_RELEASE) {
                         echo "Release ${releaseVersion} exists, but will be overwritten as requested."
                         
                         // Delete the existing release if we're going to overwrite it
@@ -100,6 +100,8 @@ pipeline {
                             # Also try to delete local tag if it exists
                             git tag -d ${releaseVersion} || echo "No local tag to delete"
                         """
+                    } else if (releaseExists && !params.CREATE_RELEASE) {
+                        echo "Release ${releaseVersion} exists, but we're not creating a release in this build, so continuing."
                     }
                 }
             }
