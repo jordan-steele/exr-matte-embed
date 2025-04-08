@@ -213,7 +213,7 @@ pipeline {
                                     def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg"
                                     def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg"
                                     
-                                    uploadToR2(artifactFile, s3Path)
+                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
                                     
                                     // Store the R2 URL for later use
                                     env.MACOS_INTEL_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
@@ -336,7 +336,7 @@ pipeline {
                                     def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
                                     def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
                                     
-                                    uploadToR2(artifactFile, s3Path)
+                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
                                     
                                     // Store the R2 URL for later use
                                     env.MACOS_ARM_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
@@ -445,7 +445,7 @@ pipeline {
                                     def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_windows.exe"
                                     def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_windows.exe"
                                     
-                                    uploadToR2(artifactFile, s3Path)
+                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
                                     
                                     // Store the R2 URL for later use
                                     env.WINDOWS_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
@@ -533,82 +533,6 @@ pipeline {
     post {
         always {
             cleanWs()
-        }
-    }
-}
-
-// Helper function to upload artifacts to Cloudflare R2
-def uploadToR2(String artifactFile, String s3Path) {
-    withCredentials([
-        string(credentialsId: 'r2-access-key', variable: 'R2_ACCESS_KEY'),
-        string(credentialsId: 'r2-secret-key', variable: 'R2_SECRET_KEY')
-    ]) {
-        if (isUnix()) {
-            // Unix system (macOS) - avoiding pip system install issues
-            sh '''
-                # Create a dedicated virtual environment for AWS CLI to avoid system Python issues
-                python3 -m venv aws-venv || true
-                
-                # Activate the virtual environment
-                . aws-venv/bin/activate
-                
-                # Upgrade pip within virtual environment (safe to do)
-                python -m pip install --upgrade pip
-                
-                # Install AWS CLI in the virtual environment
-                python -m pip install awscli
-                
-                # Create AWS CLI profile for R2
-                mkdir -p ~/.aws
-                cat > ~/.aws/config << EOF
-[profile r2]
-region = auto
-output = json
-endpoint_url = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
-EOF
-
-                cat > ~/.aws/credentials << EOF
-[r2]
-aws_access_key_id = ${R2_ACCESS_KEY}
-aws_secret_access_key = ${R2_SECRET_KEY}
-EOF
-            '''
-            
-            // Use the virtual environment to run AWS CLI commands
-            sh """
-                . aws-venv/bin/activate
-                python -m awscli --profile r2 s3 cp \"${artifactFile}\" s3://${env.R2_BUCKET_NAME}/${s3Path}
-            """
-        } else {
-            // Windows system - simplified approach
-            bat '''
-                @echo off
-                REM Activate virtual environment
-                call venv\\Scripts\\activate.bat
-                
-                REM Install AWS CLI if not present
-                pip install awscli
-                
-                REM Create AWS config directory
-                if not exist "%USERPROFILE%\\.aws" mkdir "%USERPROFILE%\\.aws"
-                
-                REM Create AWS config files
-                echo [profile r2] > "%USERPROFILE%\\.aws\\config"
-                echo region = auto >> "%USERPROFILE%\\.aws\\config"
-                echo output = json >> "%USERPROFILE%\\.aws\\config"
-                echo endpoint_url = https://%R2_ACCOUNT_ID%.r2.cloudflarestorage.com >> "%USERPROFILE%\\.aws\\config"
-                
-                echo [r2] > "%USERPROFILE%\\.aws\\credentials"
-                echo aws_access_key_id = %R2_ACCESS_KEY% >> "%USERPROFILE%\\.aws\\credentials"
-                echo aws_secret_access_key = %R2_SECRET_KEY% >> "%USERPROFILE%\\.aws\\credentials"
-            '''
-            
-            // Execute AWS CLI through Python
-            bat """
-                @echo off
-                call venv\\Scripts\\activate.bat
-                python -m awscli --profile r2 s3 cp "${artifactFile}" s3://%R2_BUCKET_NAME%/${s3Path}
-            """
         }
     }
 }
