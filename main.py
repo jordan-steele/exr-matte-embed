@@ -5,6 +5,8 @@ from src.gui.main_window import EXRProcessorGUI
 from src.processing.exr_processor import EXRProcessor
 from version import get_version
 
+import qdarktheme
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -17,6 +19,7 @@ def resource_path(relative_path):
 
 def main():
     app = QApplication(sys.argv)
+    qdarktheme.setup_theme("auto")
     processor = EXRProcessor()
     window = EXRProcessorGUI(processor)
     window.setWindowTitle(f"EXR Matte Embed v{get_version()}")
