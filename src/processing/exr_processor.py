@@ -18,6 +18,58 @@ class EXRProcessor:
             multiprocessing.set_start_method('spawn', force=True)
             os.environ['PYTHONUNBUFFERED'] = '1'
 
+    def extract_frame_numbers(self, file_list):
+        """Extract frame numbers from a list of EXR filenames"""
+        frame_numbers = []
+        frame_pattern = re.compile(r'\.(\d{4,})\.(exr)$', re.IGNORECASE)
+        
+        for filename in file_list:
+            match = frame_pattern.search(filename)
+            if match:
+                frame_numbers.append(match.group(1))
+            else:
+                # Fallback: try to find any sequence of 4+ digits before .exr
+                fallback_pattern = re.compile(r'(\d{4,})(?=.*\.exr$)', re.IGNORECASE)
+                fallback_match = fallback_pattern.search(filename)
+                if fallback_match:
+                    frame_numbers.append(fallback_match.group(1))
+                else:
+                    # If no frame number found, use filename without extension as identifier
+                    frame_numbers.append(os.path.splitext(filename)[0])
+        
+        return frame_numbers
+
+    def validate_frame_sequences(self, base_files, matte_files_dict, base_folder):
+        """Validate that all sequences have matching frame numbers"""
+        warnings = []
+        
+        # Extract frame numbers from base sequence
+        base_frames = set(self.extract_frame_numbers(base_files))
+        
+        # Check each matte sequence against base
+        for channel_name, matte_files in matte_files_dict.items():
+            matte_frames = set(self.extract_frame_numbers(matte_files))
+            
+            # Check for exact frame match
+            if base_frames != matte_frames:
+                missing_in_matte = base_frames - matte_frames
+                extra_in_matte = matte_frames - base_frames
+                
+                base_name = os.path.basename(base_folder)
+                channel_display = channel_name if channel_name != 'base' else 'matte'
+                
+                if missing_in_matte:
+                    missing_str = ', '.join(sorted(missing_in_matte))
+                    warnings.append(f"Channel '{channel_display}' in sequence '{base_name}' is missing frames: {missing_str}")
+                
+                if extra_in_matte:
+                    extra_str = ', '.join(sorted(extra_in_matte))
+                    warnings.append(f"Channel '{channel_display}' in sequence '{base_name}' has extra frames: {extra_str}")
+                
+                return False, warnings
+        
+        return True, warnings
+
     def find_matching_pairs(self, main_folder):
         """Find matching main/matte folder pairs using flexible _matte* detection"""
         pairs = []
@@ -90,6 +142,14 @@ class EXRProcessor:
                         break
                 
                 if file_count_mismatch:
+                    continue
+
+                # Validate frame number sequences
+                frames_valid, frame_warnings = self.validate_frame_sequences(base_files, matte_files, base_folder)
+                warnings.extend(frame_warnings)
+                
+                if not frames_valid:
+                    # Skip this sequence if frame numbers don't match
                     continue
                 
                 # Determine sequence type
