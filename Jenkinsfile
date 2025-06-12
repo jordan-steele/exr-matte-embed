@@ -135,7 +135,7 @@ pipeline {
                                 # Activate the virtual environment
                                 . venv/bin/activate
                                 
-                                # Install dependencies
+                                # Install GUI dependencies for GUI build
                                 python -m pip install -r requirements.txt
                                 python -m pip install pyinstaller
                                 '''
@@ -162,7 +162,7 @@ pipeline {
                             }
                         }
                         
-                        stage('Create macOS Intel App Bundle') {
+                        stage('Create macOS Intel GUI App Bundle') {
                             steps {
                                 sh '''
                                 # Activate the virtual environment
@@ -171,7 +171,7 @@ pipeline {
                                 # Set deployment target
                                 export MACOSX_DEPLOYMENT_TARGET="12.0"
                                 
-                                # Create app bundle
+                                # Create GUI app bundle
                                 python -m PyInstaller \\
                                   --windowed \\
                                   --name "EXR Matte Embed" \\
@@ -185,10 +185,28 @@ pipeline {
                             }
                         }
                         
+                        stage('Create macOS Intel CLI Binary') {
+                            steps {
+                                sh '''
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Set deployment target
+                                export MACOSX_DEPLOYMENT_TARGET="12.0"
+                                
+                                # Create CLI binary using the spec file
+                                python -m PyInstaller "EXR Matte Embed CLI.spec"
+                                
+                                # Rename CLI binary to include version and platform
+                                mv "dist/exr-matte-embed-cli" "dist/exr-matte-embed-cli_${APP_VERSION}_macos-intel"
+                                '''
+                            }
+                        }
+                        
                         stage('Create DMG (Intel)') {
                             steps {
                                 sh """
-                                # Create DMG with version number
+                                # Create DMG with version number for GUI
                                 create-dmg \\
                                   --volname "EXR Matte Embed ${APP_VERSION}" \\
                                   --window-pos 200 120 \\
@@ -197,29 +215,36 @@ pipeline {
                                   --icon "EXR Matte Embed.app" 200 190 \\
                                   --hide-extension "EXR Matte Embed.app" \\
                                   --app-drop-link 600 185 \\
-                                  "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg" \\
+                                  "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-intel.dmg" \\
                                   "dist/EXR Matte Embed.app"
                                 """
                             }
                         }
                         
-                        stage('Archive macOS Intel Artifact') {
+                        stage('Archive macOS Intel Artifacts') {
                             steps {
-                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg", name: 'macos-intel-dmg'
+                                stash includes: "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-intel.dmg", name: 'macos-intel-gui-dmg'
+                                stash includes: "dist/exr-matte-embed-cli_${APP_VERSION}_macos-intel", name: 'macos-intel-cli'
                             }
                         }
                         
                         stage('Upload macOS Intel to Cloudflare R2') {
                             steps {
                                 script {
-                                    def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg"
-                                    def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_macos-intel.dmg"
+                                    // Upload GUI DMG
+                                    def guiArtifactFile = "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-intel.dmg"
+                                    def guiS3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-intel.dmg"
+                                    uploadToR2(guiArtifactFile, guiS3Path, R2_BUCKET_NAME)
+                                    env.MACOS_INTEL_GUI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${guiS3Path}"
                                     
-                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
+                                    // Upload CLI binary
+                                    def cliArtifactFile = "dist/exr-matte-embed-cli_${APP_VERSION}_macos-intel"
+                                    def cliS3Path = "exr-matte-embed/releases/v${APP_VERSION}/exr-matte-embed-cli_${APP_VERSION}_macos-intel"
+                                    uploadToR2(cliArtifactFile, cliS3Path, R2_BUCKET_NAME)
+                                    env.MACOS_INTEL_CLI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${cliS3Path}"
                                     
-                                    // Store the R2 URL for later use
-                                    env.MACOS_INTEL_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
-                                    echo "Uploaded macOS Intel build to R2: ${env.MACOS_INTEL_R2_URL}"
+                                    echo "Uploaded macOS Intel GUI to R2: ${env.MACOS_INTEL_GUI_R2_URL}"
+                                    echo "Uploaded macOS Intel CLI to R2: ${env.MACOS_INTEL_CLI_R2_URL}"
                                 }
                             }
                         }
@@ -257,7 +282,7 @@ pipeline {
                                 # Activate the virtual environment
                                 . venv/bin/activate
                                 
-                                # Install dependencies
+                                # Install GUI dependencies for GUI build
                                 python -m pip install -r requirements.txt
                                 python -m pip install pyinstaller
                                 '''
@@ -285,7 +310,7 @@ pipeline {
                             }
                         }
                         
-                        stage('Create macOS ARM App Bundle') {
+                        stage('Create macOS ARM GUI App Bundle') {
                             steps {
                                 sh '''
                                 # Activate the virtual environment
@@ -294,7 +319,7 @@ pipeline {
                                 # Set deployment target
                                 export MACOSX_DEPLOYMENT_TARGET="12.0"
                                 
-                                # Create app bundle
+                                # Create GUI app bundle
                                 python -m PyInstaller \\
                                   --windowed \\
                                   --name "EXR Matte Embed" \\
@@ -308,10 +333,28 @@ pipeline {
                             }
                         }
                         
+                        stage('Create macOS ARM CLI Binary') {
+                            steps {
+                                sh '''
+                                # Activate the virtual environment
+                                . venv/bin/activate
+                                
+                                # Set deployment target
+                                export MACOSX_DEPLOYMENT_TARGET="12.0"
+                                
+                                # Create CLI binary using the spec file
+                                python -m PyInstaller "EXR Matte Embed CLI.spec"
+                                
+                                # Rename CLI binary to include version and platform
+                                mv "dist/exr-matte-embed-cli" "dist/exr-matte-embed-cli_${APP_VERSION}_macos-apple-silicon"
+                                '''
+                            }
+                        }
+                        
                         stage('Create DMG (ARM)') {
                             steps {
                                 sh """
-                                # Create DMG with version number
+                                # Create DMG with version number for GUI
                                 create-dmg \\
                                   --volname "EXR Matte Embed ${APP_VERSION}" \\
                                   --window-pos 200 120 \\
@@ -320,29 +363,36 @@ pipeline {
                                   --icon "EXR Matte Embed.app" 200 190 \\
                                   --hide-extension "EXR Matte Embed.app" \\
                                   --app-drop-link 600 185 \\
-                                  "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg" \\
+                                  "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-apple-silicon.dmg" \\
                                   "dist/EXR Matte Embed.app"
                                 """
                             }
                         }
                         
-                        stage('Archive macOS ARM Artifact') {
+                        stage('Archive macOS ARM Artifacts') {
                             steps {
-                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg", name: 'macos-arm-dmg'
+                                stash includes: "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-apple-silicon.dmg", name: 'macos-arm-gui-dmg'
+                                stash includes: "dist/exr-matte-embed-cli_${APP_VERSION}_macos-apple-silicon", name: 'macos-arm-cli'
                             }
                         }
                         
                         stage('Upload macOS ARM to Cloudflare R2') {
                             steps {
                                 script {
-                                    def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
-                                    def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_macos-apple-silicon.dmg"
+                                    // Upload GUI DMG
+                                    def guiArtifactFile = "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-apple-silicon.dmg"
+                                    def guiS3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed-GUI_${APP_VERSION}_macos-apple-silicon.dmg"
+                                    uploadToR2(guiArtifactFile, guiS3Path, R2_BUCKET_NAME)
+                                    env.MACOS_ARM_GUI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${guiS3Path}"
                                     
-                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
+                                    // Upload CLI binary
+                                    def cliArtifactFile = "dist/exr-matte-embed-cli_${APP_VERSION}_macos-apple-silicon"
+                                    def cliS3Path = "exr-matte-embed/releases/v${APP_VERSION}/exr-matte-embed-cli_${APP_VERSION}_macos-apple-silicon"
+                                    uploadToR2(cliArtifactFile, cliS3Path, R2_BUCKET_NAME)
+                                    env.MACOS_ARM_CLI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${cliS3Path}"
                                     
-                                    // Store the R2 URL for later use
-                                    env.MACOS_ARM_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
-                                    echo "Uploaded macOS ARM build to R2: ${env.MACOS_ARM_R2_URL}"
+                                    echo "Uploaded macOS ARM GUI to R2: ${env.MACOS_ARM_GUI_R2_URL}"
+                                    echo "Uploaded macOS ARM CLI to R2: ${env.MACOS_ARM_CLI_R2_URL}"
                                 }
                             }
                         }
@@ -382,7 +432,7 @@ pipeline {
                                 REM Activate virtual environment
                                 call venv\\Scripts\\activate.bat
                                 
-                                REM Install dependencies
+                                REM Install GUI dependencies for GUI build
                                 python -m pip install -r requirements.txt
                                 python -m pip install pyinstaller
                                 '''
@@ -404,14 +454,14 @@ pipeline {
                             }
                         }
                         
-                        stage('Create Windows Executable') {
+                        stage('Create Windows GUI Executable') {
                             steps {
                                 bat '''
                                 @echo off
                                 REM Activate virtual environment
                                 call venv\\Scripts\\activate.bat
                                 
-                                REM Create Windows executable
+                                REM Create Windows GUI executable
                                 python -m PyInstaller ^
                                   --onefile ^
                                   --windowed ^
@@ -426,32 +476,55 @@ pipeline {
                             }
                         }
                         
-                        stage('Rename Windows Executable') {
+                        stage('Create Windows CLI Executable') {
+                            steps {
+                                bat '''
+                                @echo off
+                                REM Activate virtual environment
+                                call venv\\Scripts\\activate.bat
+                                
+                                REM Create Windows CLI executable using spec file
+                                python -m PyInstaller "EXR Matte Embed CLI.spec"
+                                
+                                REM Rename CLI executable to include version and platform
+                                move "dist\\exr-matte-embed-cli.exe" "dist\\exr-matte-embed-cli_%APP_VERSION%_windows.exe"
+                                '''
+                            }
+                        }
+                        
+                        stage('Rename Windows GUI Executable') {
                             steps {
                                 bat """
                                 @echo off
-                                move "dist\\EXR Matte Embed.exe" "dist\\EXR-Matte-Embed_${APP_VERSION}_windows.exe"
+                                move "dist\\EXR Matte Embed.exe" "dist\\EXR-Matte-Embed-GUI_${APP_VERSION}_windows.exe"
                                 """
                             }
                         }
                         
-                        stage('Archive Windows Artifact') {
+                        stage('Archive Windows Artifacts') {
                             steps {
-                                stash includes: "dist/EXR-Matte-Embed_${APP_VERSION}_windows.exe", name: 'windows-installer'
+                                stash includes: "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_windows.exe", name: 'windows-gui-installer'
+                                stash includes: "dist/exr-matte-embed-cli_${APP_VERSION}_windows.exe", name: 'windows-cli'
                             }
                         }
                         
                         stage('Upload Windows to Cloudflare R2') {
                             steps {
                                 script {
-                                    def artifactFile = "dist/EXR-Matte-Embed_${APP_VERSION}_windows.exe"
-                                    def s3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed_${APP_VERSION}_windows.exe"
+                                    // Upload GUI executable
+                                    def guiArtifactFile = "dist/EXR-Matte-Embed-GUI_${APP_VERSION}_windows.exe"
+                                    def guiS3Path = "exr-matte-embed/releases/v${APP_VERSION}/EXR-Matte-Embed-GUI_${APP_VERSION}_windows.exe"
+                                    uploadToR2(guiArtifactFile, guiS3Path, R2_BUCKET_NAME)
+                                    env.WINDOWS_GUI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${guiS3Path}"
                                     
-                                    uploadToR2(artifactFile, s3Path, R2_BUCKET_NAME)
+                                    // Upload CLI executable
+                                    def cliArtifactFile = "dist/exr-matte-embed-cli_${APP_VERSION}_windows.exe"
+                                    def cliS3Path = "exr-matte-embed/releases/v${APP_VERSION}/exr-matte-embed-cli_${APP_VERSION}_windows.exe"
+                                    uploadToR2(cliArtifactFile, cliS3Path, R2_BUCKET_NAME)
+                                    env.WINDOWS_CLI_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${cliS3Path}"
                                     
-                                    // Store the R2 URL for later use
-                                    env.WINDOWS_R2_URL = "${env.R2_PUBLIC_DOMAIN}/${s3Path}"
-                                    echo "Uploaded Windows build to R2: ${env.WINDOWS_R2_URL}"
+                                    echo "Uploaded Windows GUI to R2: ${env.WINDOWS_GUI_R2_URL}"
+                                    echo "Uploaded Windows CLI to R2: ${env.WINDOWS_CLI_R2_URL}"
                                 }
                             }
                         }
@@ -485,16 +558,27 @@ pipeline {
                     // Create directories for unstashed artifacts
                     sh "mkdir -p dist"
                     
-                    // Unstash artifacts from all platforms
-                    unstash 'macos-intel-dmg'
-                    unstash 'macos-arm-dmg'
-                    unstash 'windows-installer'
+                    // Unstash GUI artifacts from all platforms
+                    unstash 'macos-intel-gui-dmg'
+                    unstash 'macos-arm-gui-dmg'
+                    unstash 'windows-gui-installer'
+                    
+                    // Unstash CLI artifacts from all platforms
+                    unstash 'macos-intel-cli'
+                    unstash 'macos-arm-cli'
+                    unstash 'windows-cli'
                     
                     // Copy artifacts to the root directory (without 'dist/' prefix)
                     sh """
-                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg" .
-                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg" .
-                        cp "dist/EXR-Matte-Embed_${env.APP_VERSION}_windows.exe" .
+                        # GUI artifacts
+                        cp "dist/EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-intel.dmg" .
+                        cp "dist/EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-apple-silicon.dmg" .
+                        cp "dist/EXR-Matte-Embed-GUI_${env.APP_VERSION}_windows.exe" .
+                        
+                        # CLI artifacts
+                        cp "dist/exr-matte-embed-cli_${env.APP_VERSION}_macos-intel" .
+                        cp "dist/exr-matte-embed-cli_${env.APP_VERSION}_macos-apple-silicon" .
+                        cp "dist/exr-matte-embed-cli_${env.APP_VERSION}_windows.exe" .
                     """
                     
                     // Just use the provided release notes without Cloudflare links
@@ -515,15 +599,20 @@ pipeline {
                             draft: false
                         )
                         
-                        // Upload all assets to the release
+                        // Upload all GUI and CLI assets to the release
                         uploadGithubReleaseAsset(
                             credentialId: 'github-creds',
                             repository: 'jordan-steele/exr-matte-embed',
                             tagName: releaseVersion,
                             uploadAssets: [
-                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-intel.dmg"],
-                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg", name: "EXR-Matte-Embed_${env.APP_VERSION}_macos-apple-silicon.dmg"],
-                                [filePath: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe", name: "EXR-Matte-Embed_${env.APP_VERSION}_windows.exe"]
+                                // GUI Assets
+                                [filePath: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-intel.dmg", name: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-intel.dmg"],
+                                [filePath: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-apple-silicon.dmg", name: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_macos-apple-silicon.dmg"],
+                                [filePath: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_windows.exe", name: "EXR-Matte-Embed-GUI_${env.APP_VERSION}_windows.exe"],
+                                // CLI Assets
+                                [filePath: "exr-matte-embed-cli_${env.APP_VERSION}_macos-intel", name: "exr-matte-embed-cli_${env.APP_VERSION}_macos-intel"],
+                                [filePath: "exr-matte-embed-cli_${env.APP_VERSION}_macos-apple-silicon", name: "exr-matte-embed-cli_${env.APP_VERSION}_macos-apple-silicon"],
+                                [filePath: "exr-matte-embed-cli_${env.APP_VERSION}_windows.exe", name: "exr-matte-embed-cli_${env.APP_VERSION}_windows.exe"]
                             ]
                         )
                     }
