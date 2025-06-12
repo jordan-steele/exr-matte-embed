@@ -29,5 +29,6 @@ class Config:
         return {
             'matte_channel_name': 'matte',
             'last_folder_path': '',
-            'compression': 'piz'
+            'compression': 'piz',
+            'replace_originals': False
         }

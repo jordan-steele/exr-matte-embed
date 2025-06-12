@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QLineEdit, QPushButton, QComboBox, 
                               QSpinBox, QProgressBar, QFileDialog,
                               QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem,
-                              QGroupBox, QScrollArea, QFrame)
+                              QGroupBox, QScrollArea, QFrame, QCheckBox)
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QIcon, QFont
 import threading
@@ -84,6 +84,7 @@ class EXRProcessorGUI(QMainWindow):
         self.num_processes = max(multiprocessing.cpu_count() // 2, 1)
         self.scan_results = None
         self.last_folder_from_config = ""  # Initialize before loading config
+        self.replace_originals = False
 
         # Progress tracking variables
         self.progress_queue = queue.Queue()
@@ -124,6 +125,8 @@ class EXRProcessorGUI(QMainWindow):
         self.last_folder_from_config = config_data.get('last_folder_path', '')
         # Store the compression setting for later use after UI creation
         self.compression = config_data.get('compression', 'piz')
+        # Store the replace originals setting
+        self.replace_originals = config_data.get('replace_originals', False)
 
     def apply_saved_config(self):
         """Apply the saved configuration after UI elements are created"""
@@ -137,16 +140,24 @@ class EXRProcessorGUI(QMainWindow):
         
         # Apply saved compression setting
         self.compression_combo.setCurrentText(self.compression)
+        
+        # Apply saved replace originals setting
+        self.replace_originals_checkbox.setChecked(self.replace_originals)
 
     def on_compression_changed(self):
         """Called when compression setting changes - save to config"""
+        self.save_config()
+
+    def on_replace_originals_changed(self):
+        """Called when replace originals setting changes - save to config"""
         self.save_config()
 
     def save_config(self):
         config_data = {
             'matte_channel_name': self.matte_channel_name_edit.text(),
             'last_folder_path': self.folder_path,
-            'compression': self.compression_combo.currentText()
+            'compression': self.compression_combo.currentText(),
+            'replace_originals': self.replace_originals_checkbox.isChecked()
         }
         self.config.save(config_data)
 
@@ -223,6 +234,16 @@ class EXRProcessorGUI(QMainWindow):
         process_layout.addWidget(self.process_spinbox)
         process_layout.addStretch()
         options_layout.addLayout(process_layout)
+
+        # Replace Originals checkbox
+        self.replace_originals_checkbox = QCheckBox("Replace Originals (move to trash)")
+        self.replace_originals_checkbox.setChecked(self.replace_originals)
+        self.replace_originals_checkbox.stateChanged.connect(self.on_replace_originals_changed)
+        self.replace_originals_checkbox.setToolTip(
+            "When enabled, original source folders will be moved to trash/recycle bin\n"
+            "and embedded folders will be renamed to replace them."
+        )
+        options_layout.addWidget(self.replace_originals_checkbox)
 
         control_layout.addWidget(options_group)
 
@@ -443,7 +464,8 @@ class EXRProcessorGUI(QMainWindow):
             'num_processes': self.process_spinbox.value(),
             'progress_queue': self.progress_queue,
             'result_queue': self.result_queue,
-            'stop_event': self.stop_event
+            'stop_event': self.stop_event,
+            'replace_originals': self.replace_originals_checkbox.isChecked()
         }
         
         self.worker = ProcessingWorker(self.processor, processing_args)
@@ -494,10 +516,19 @@ class EXRProcessorGUI(QMainWindow):
                     result['error_message']
                 )
             else:
+                # Success case
+                if result.get('replaced_originals'):
+                    message = f"All files processed successfully!\n\nOriginals have been moved to trash and embedded sequences renamed to replace them."
+                    processed_count = len(result.get('processed_pairs', []))
+                    if processed_count > 0:
+                        message += f"\n\n{processed_count} sequence(s) replaced."
+                else:
+                    message = "All files processed successfully."
+                
                 QMessageBox.information(
                     self,
                     "Success",
-                    "All files processed successfully."
+                    message
                 )
         except queue.Empty:
             QMessageBox.warning(

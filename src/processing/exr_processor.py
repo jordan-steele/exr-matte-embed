@@ -5,6 +5,7 @@ import multiprocessing
 import time
 import sys
 import re
+from send2trash import send2trash
 
 class EXRProcessor:
     COMPRESSION_OPTIONS = ['none', 'rle', 'zip', 'zips', 'piz', 'pxr24', 'b44', 'b44a', 'dwaa']
@@ -202,7 +203,7 @@ class EXRProcessor:
             return args[0], args[1], args[2], str(e)
 
     def process_sequences_from_cache(self, scan_results, compression, matte_channel_name, 
-                                   num_processes, progress_queue, result_queue, stop_event):
+                                   num_processes, progress_queue, result_queue, stop_event, replace_originals=False):
         """Process sequences using cached scan results"""
         
         pairs = scan_results.get('pairs', [])
@@ -276,6 +277,37 @@ class EXRProcessor:
                     'timing': f"Elapsed: {elapsed_time:.2f}s, Avg: {avg_time_per_file:.2f}s/file, Est. remaining: {estimated_time_left:.2f}s"
                 })
 
+        # Handle original replacement if requested and no errors occurred
+        processed_pairs = []
+        if replace_originals and not error_files:
+            try:
+                progress_queue.put({
+                    'progress': 100, 
+                    'status1': 'Replacing original folders...', 
+                    'status2': 'Moving originals to trash and renaming embedded folders'
+                })
+                
+                for pair in pairs:
+                    base_folder = pair['base_folder']
+                    embedded_folder = base_folder + '_embedded'
+                    
+                    if os.path.exists(embedded_folder):
+                        # Move original base folder to trash
+                        send2trash(base_folder)
+                        
+                        # Move all matte folders to trash
+                        for matte_folder in pair['matte_folders'].values():
+                            if os.path.exists(matte_folder):
+                                send2trash(matte_folder)
+                        
+                        # Rename embedded folder to original name
+                        os.rename(embedded_folder, base_folder)
+                        processed_pairs.append(base_folder)
+                        
+            except Exception as e:
+                warnings.append(f"Error during original replacement: {str(e)}")
+                error_files.append(("Replacement Process", str(e)))
+
         # Prepare results
         if error_files or warnings:
             error_message = ""
@@ -297,7 +329,11 @@ class EXRProcessor:
                 'error_message': error_message
             })
         else:
-            result_queue.put({'success': True})
+            success_result = {'success': True}
+            if replace_originals and processed_pairs:
+                success_result['replaced_originals'] = True
+                success_result['processed_pairs'] = processed_pairs
+            result_queue.put(success_result)
 
         stop_event.set()
 

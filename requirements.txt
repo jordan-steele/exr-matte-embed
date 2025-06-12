@@ -2,3 +2,5 @@ OpenEXR
 numpy
 appdirs
 PySide6
+pyqtdarktheme-fork
+send2trash
