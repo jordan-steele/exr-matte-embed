@@ -21,17 +21,15 @@ class ScanWorker(QThread):
     
     def run(self):
         try:
-            # Scan for both regular and RGB mode pairs
-            regular_pairs, regular_warnings = self.processor.find_matching_pairs(self.folder_path, rgb_mode=False)
-            rgb_pairs, rgb_warnings = self.processor.find_matching_pairs(self.folder_path, rgb_mode=True)
+            # Scan using the new flexible approach
+            pairs, warnings = self.processor.find_matching_pairs(self.folder_path)
             
             # Combine results
             scan_results = {
-                'regular_pairs': regular_pairs,
-                'rgb_pairs': rgb_pairs,
-                'warnings': regular_warnings + rgb_warnings,
-                'total_sequences': len(regular_pairs) + len(rgb_pairs),
-                'total_files': sum(len(pair['base_files']) for pair in regular_pairs + rgb_pairs)
+                'pairs': pairs,
+                'warnings': warnings,
+                'total_sequences': len(pairs),
+                'total_files': sum(len(pair['base_files']) for pair in pairs)
             }
             
             self.scanCompleted.emit(scan_results)
@@ -40,8 +38,7 @@ class ScanWorker(QThread):
             self.scanCompleted.emit({
                 'error': True,
                 'error_message': str(e),
-                'regular_pairs': [],
-                'rgb_pairs': [],
+                'pairs': [],
                 'warnings': [],
                 'total_sequences': 0,
                 'total_files': 0
@@ -281,9 +278,14 @@ class EXRProcessorGUI(QMainWindow):
         # Set column resize modes
         header = self.results_tree.header()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, header.ResizeMode.Stretch)  # Sequence column stretches
-        header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)  # Type column fits content
-        header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)  # Files column fits content
+        header.setSectionResizeMode(0, header.ResizeMode.Interactive)  # Sequence column - manually resizable
+        header.setSectionResizeMode(1, header.ResizeMode.Interactive)  # Type column - manually resizable  
+        header.setSectionResizeMode(2, header.ResizeMode.Interactive)  # Files column - manually resizable
+        
+        # Set reasonable default column widths
+        header.resizeSection(0, 300)  # Sequence column default width
+        header.resizeSection(1, 200)  # Type column default width
+        header.resizeSection(2, 80)   # Files column default width
         
         results_layout.addWidget(self.results_tree)
         
@@ -365,17 +367,26 @@ class EXRProcessorGUI(QMainWindow):
     def populate_results_tree(self, results):
         self.results_tree.clear()
         
-        # Add regular matte sequences
-        if results['regular_pairs']:
-            regular_root = QTreeWidgetItem(self.results_tree, ["Regular Matte Sequences", "", ""])
-            regular_root.setExpanded(True)
+        # Group sequences by type
+        single_channel_sequences = []
+        multi_channel_sequences = []
+        
+        for pair in results['pairs']:
+            if len(pair['channels']) == 1 and 'base' in pair['channels']:
+                single_channel_sequences.append(pair)
+            else:
+                multi_channel_sequences.append(pair)
+        
+        # Add single channel sequences
+        if single_channel_sequences:
+            single_root = QTreeWidgetItem(self.results_tree, ["Single Channel Matte Sequences", "", ""])
+            single_root.setExpanded(True)
             
-            for pair in results['regular_pairs']:
+            for pair in single_channel_sequences:
                 base_name = os.path.basename(pair['base_folder'])
-                matte_name = os.path.basename(pair['matte_folder'])
                 file_count = len(pair['base_files'])
                 
-                sequence_item = QTreeWidgetItem(regular_root, [
+                sequence_item = QTreeWidgetItem(single_root, [
                     base_name, 
                     "Single Channel Matte", 
                     str(file_count)
@@ -383,29 +394,36 @@ class EXRProcessorGUI(QMainWindow):
                 
                 # Add details as children
                 QTreeWidgetItem(sequence_item, [f"  → Source: {base_name}", "", ""])
-                QTreeWidgetItem(sequence_item, [f"  → Matte: {matte_name}", "", ""])
+                matte_folder = os.path.basename(pair['matte_folders']['base'])
+                QTreeWidgetItem(sequence_item, [f"  → Matte: {matte_folder}", "", ""])
         
-        # Add RGB matte sequences
-        if results['rgb_pairs']:
-            rgb_root = QTreeWidgetItem(self.results_tree, ["RGB Matte Sequences", "", ""])
-            rgb_root.setExpanded(True)
+        # Add multi-channel sequences
+        if multi_channel_sequences:
+            multi_root = QTreeWidgetItem(self.results_tree, ["Multi-Channel Matte Sequences", "", ""])
+            multi_root.setExpanded(True)
             
-            for pair in results['rgb_pairs']:
+            for pair in multi_channel_sequences:
                 base_name = os.path.basename(pair['base_folder'])
-                channels = pair['channels']
                 file_count = len(pair['base_files'])
                 
-                sequence_item = QTreeWidgetItem(rgb_root, [
+                sequence_item = QTreeWidgetItem(multi_root, [
                     base_name, 
-                    f"RGB Channels ({', '.join(channels)})", 
+                    pair['sequence_type'], 
                     str(file_count)
                 ])
                 
                 # Add details as children
                 QTreeWidgetItem(sequence_item, [f"  → Source: {base_name}", "", ""])
-                for channel in channels:
+                for channel in sorted(pair['channels']):
                     matte_folder = os.path.basename(pair['matte_folders'][channel])
-                    QTreeWidgetItem(sequence_item, [f"  → Matte{channel}: {matte_folder}", "", ""])
+                    if channel == 'base':
+                        display_name = 'matte'
+                    elif channel.lower() in ['r', 'g', 'b', 'a']:
+                        # Show the conflict-resolved name
+                        display_name = f'matte.matte_{channel.lower()}'
+                    else:
+                        display_name = f'matte.{channel}'
+                    QTreeWidgetItem(sequence_item, [f"  → {display_name}: {matte_folder}", "", ""])
 
         # Column resizing is handled by the header resize modes set in create_results_panel()
 
