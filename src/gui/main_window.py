@@ -1,14 +1,51 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QLineEdit, QPushButton, QComboBox, 
-                              QCheckBox, QSpinBox, QProgressBar, QFileDialog,
-                              QMessageBox, QToolTip)
+                              QSpinBox, QProgressBar, QFileDialog,
+                              QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem,
+                              QGroupBox, QScrollArea, QFrame)
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QFont
 import threading
 import queue
 import multiprocessing
 from ..utils.config import Config
 import time, sys, os
+
+class ScanWorker(QThread):
+    scanCompleted = Signal(dict)
+    
+    def __init__(self, processor, folder_path):
+        super().__init__()
+        self.processor = processor
+        self.folder_path = folder_path
+    
+    def run(self):
+        try:
+            # Scan for both regular and RGB mode pairs
+            regular_pairs, regular_warnings = self.processor.find_matching_pairs(self.folder_path, rgb_mode=False)
+            rgb_pairs, rgb_warnings = self.processor.find_matching_pairs(self.folder_path, rgb_mode=True)
+            
+            # Combine results
+            scan_results = {
+                'regular_pairs': regular_pairs,
+                'rgb_pairs': rgb_pairs,
+                'warnings': regular_warnings + rgb_warnings,
+                'total_sequences': len(regular_pairs) + len(rgb_pairs),
+                'total_files': sum(len(pair['base_files']) for pair in regular_pairs + rgb_pairs)
+            }
+            
+            self.scanCompleted.emit(scan_results)
+            
+        except Exception as e:
+            self.scanCompleted.emit({
+                'error': True,
+                'error_message': str(e),
+                'regular_pairs': [],
+                'rgb_pairs': [],
+                'warnings': [],
+                'total_sequences': 0,
+                'total_files': 0
+            })
 
 class ProcessingWorker(QThread):
     progressUpdated = Signal(dict)
@@ -22,8 +59,8 @@ class ProcessingWorker(QThread):
 
     def run(self):
         try:
-            # Run the processing
-            result = self.processor.process_sequences(**self.processing_args)
+            # Run the processing with pre-scanned results
+            result = self.processor.process_sequences_from_cache(**self.processing_args)
             
             # Emit the finished signal with the result
             self.finished.emit(result if result else {})
@@ -40,14 +77,16 @@ class EXRProcessorGUI(QMainWindow):
     def __init__(self, processor):
         super().__init__()
         self.processor = processor
-        self.setFixedSize(726, 400)
+        self.setMinimumSize(800, 600)
+        self.resize(1100, 700)
 
         # Initialize variables
         self.folder_path = ""
         self.compression = "piz"
-        self.rgb_mode = False
         self.matte_channel_name = "matte"
         self.num_processes = max(multiprocessing.cpu_count() // 2, 1)
+        self.scan_results = None
+        self.last_folder_from_config = ""  # Initialize before loading config
 
         # Progress tracking variables
         self.progress_queue = queue.Queue()
@@ -60,10 +99,21 @@ class EXRProcessorGUI(QMainWindow):
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        self.layout = QVBoxLayout(central_widget)
+        
+        # Create main splitter for two-panel layout
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.addWidget(self.main_splitter)
 
         # Create GUI elements
-        self.create_widgets()
+        self.create_control_panel()
+        self.create_results_panel()
+        
+        # Set splitter sizes (40% controls, 60% results)
+        self.main_splitter.setSizes([500, 600])
+        
+        # Apply saved config after UI is created
+        self.apply_saved_config()
         
         # Setup progress update timer
         self.progress_timer = QTimer()
@@ -73,25 +123,74 @@ class EXRProcessorGUI(QMainWindow):
     def load_config(self):
         config_data = self.config.load()
         self.matte_channel_name = config_data['matte_channel_name']
+        # Store the last folder path for later use after UI creation
+        self.last_folder_from_config = config_data.get('last_folder_path', '')
+        # Store the compression setting for later use after UI creation
+        self.compression = config_data.get('compression', 'piz')
+
+    def apply_saved_config(self):
+        """Apply the saved configuration after UI elements are created"""
+        # Apply saved folder path
+        if self.last_folder_from_config and os.path.exists(self.last_folder_from_config):
+            self.folder_path = self.last_folder_from_config
+            self.folder_path_edit.setText(self.last_folder_from_config)
+            self.scan_button.setEnabled(True)
+            # Update the summary to indicate the folder was loaded from previous session
+            self.summary_label.setText("Previous folder loaded. Click 'Scan Folder' to analyze sequences.")
+        
+        # Apply saved compression setting
+        self.compression_combo.setCurrentText(self.compression)
+
+    def on_compression_changed(self):
+        """Called when compression setting changes - save to config"""
+        self.save_config()
 
     def save_config(self):
         config_data = {
-            'matte_channel_name': self.matte_channel_name_edit.text()
+            'matte_channel_name': self.matte_channel_name_edit.text(),
+            'last_folder_path': self.folder_path,
+            'compression': self.compression_combo.currentText()
         }
         self.config.save(config_data)
 
-    def create_widgets(self):
+    def create_control_panel(self):
+        # Create left panel for controls
+        control_widget = QWidget()
+        control_layout = QVBoxLayout(control_widget)
+        
+        # Title for controls
+        title_label = QLabel("Processing Controls")
+        title_font = QFont()
+        title_font.setBold(True)
+        title_font.setPointSize(12)
+        title_label.setFont(title_font)
+        control_layout.addWidget(title_label)
+        
         # Folder selection
-        folder_layout = QHBoxLayout()
-        folder_label = QLabel("Select Folder:")
+        folder_group = QGroupBox("Source Folder")
+        folder_layout = QVBoxLayout(folder_group)
+        
+        folder_select_layout = QHBoxLayout()
         self.folder_path_edit = QLineEdit()
         self.folder_path_edit.setReadOnly(True)
+        self.folder_path_edit.setPlaceholderText("Select a folder containing EXR sequences...")
         browse_button = QPushButton("Browse")
         browse_button.clicked.connect(self.select_folder)
-        folder_layout.addWidget(folder_label)
-        folder_layout.addWidget(self.folder_path_edit)
-        folder_layout.addWidget(browse_button)
-        self.layout.addLayout(folder_layout)
+        folder_select_layout.addWidget(self.folder_path_edit)
+        folder_select_layout.addWidget(browse_button)
+        folder_layout.addLayout(folder_select_layout)
+        
+        # Scan button
+        self.scan_button = QPushButton("Scan Folder")
+        self.scan_button.clicked.connect(self.scan_folder)
+        self.scan_button.setEnabled(False)
+        folder_layout.addWidget(self.scan_button)
+        
+        control_layout.addWidget(folder_group)
+
+        # Processing options
+        options_group = QGroupBox("Processing Options")
+        options_layout = QVBoxLayout(options_group)
 
         # Compression
         compression_layout = QHBoxLayout()
@@ -100,34 +199,11 @@ class EXRProcessorGUI(QMainWindow):
         self.compression_combo.setMinimumWidth(150)
         self.compression_combo.addItems(self.processor.COMPRESSION_OPTIONS)
         self.compression_combo.setCurrentText(self.compression)
+        self.compression_combo.currentTextChanged.connect(self.on_compression_changed)
         compression_layout.addWidget(compression_label)
         compression_layout.addWidget(self.compression_combo)
         compression_layout.addStretch()
-        self.layout.addLayout(compression_layout)
-
-        # RGB Matte Mode
-        rgb_layout = QHBoxLayout()
-        self.rgb_checkbox = QCheckBox("RGB Matte Mode")
-        help_text = ("RGB Matte Mode expects source files to be named with _matteR, _matteG, _matteB,\n"
-                    "and _matteA suffixes. It will embed four separate matte channels from these files.\n\n"
-                    "For example: SHOW_100_010_020_v001_matteR/frame.001.exr, SHOW_100_010_020_v001_matteG/frame.001.exr, etc.")
-        self.rgb_checkbox.setToolTip(help_text)
-
-        # Create a help label with custom styling
-        help_label = QLabel("(?)")
-        help_label.setStyleSheet("""
-            QLabel {
-                color: #666;
-                font-size: 12px;
-                padding: 0 5px;
-            }
-        """)
-        help_label.setToolTip(help_text)
-
-        rgb_layout.addWidget(self.rgb_checkbox)
-        rgb_layout.addWidget(help_label)
-        rgb_layout.addStretch()
-        self.layout.addLayout(rgb_layout)
+        options_layout.addLayout(compression_layout)
 
         # Matte Channel Name
         matte_layout = QHBoxLayout()
@@ -137,7 +213,7 @@ class EXRProcessorGUI(QMainWindow):
         matte_layout.addWidget(matte_label)
         matte_layout.addWidget(self.matte_channel_name_edit)
         matte_layout.addStretch()
-        self.layout.addLayout(matte_layout)
+        options_layout.addLayout(matte_layout)
 
         # Number of Processes
         process_layout = QHBoxLayout()
@@ -149,41 +225,193 @@ class EXRProcessorGUI(QMainWindow):
         process_layout.addWidget(process_label)
         process_layout.addWidget(self.process_spinbox)
         process_layout.addStretch()
-        self.layout.addLayout(process_layout)
+        options_layout.addLayout(process_layout)
+
+        control_layout.addWidget(options_group)
 
         # Process Button
-        self.process_button = QPushButton("Process")
+        self.process_button = QPushButton("Process Sequences")
         self.process_button.clicked.connect(self.start_processing)
-        self.layout.addWidget(self.process_button, alignment=Qt.AlignCenter)
+        self.process_button.setEnabled(False)
+        control_layout.addWidget(self.process_button)
 
-        # Progress Bar and Labels
+        # Progress section
+        progress_group = QGroupBox("Progress")
+        progress_layout = QVBoxLayout(progress_group)
+        
         self.progress_bar = QProgressBar()
-        self.progress_label1 = QLabel()
-        self.progress_label2 = QLabel()
-        self.timing_label = QLabel()
+        self.progress_label1 = QLabel("Ready to scan...")
+        self.progress_label2 = QLabel("")
+        self.timing_label = QLabel("")
         
-        self.layout.addWidget(self.progress_bar)
-        self.layout.addWidget(self.progress_label1)
-        self.layout.addWidget(self.progress_label2)
-        self.layout.addWidget(self.timing_label)
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.progress_label1)
+        progress_layout.addWidget(self.progress_label2)
+        progress_layout.addWidget(self.timing_label)
         
-        self.layout.addStretch()
+        control_layout.addWidget(progress_group)
+        control_layout.addStretch()
 
-    def show_rgb_help(self):
-        help_text = ("RGB Matte Mode expects source files to be named with _matteR, _matteG, _matteB,\n"
-                    "and _matteA suffixes. It will embed four separate matte channels from these files.\n\n"
-                    "For example: SHOW_100_010_020_v001_matteR/frame.001.exr, SHOW_100_010_020_v001_matteG/frame.001.exr, etc.")
-        QMessageBox.information(self, "RGB Matte Mode Help", help_text)
+        self.main_splitter.addWidget(control_widget)
+
+    def create_results_panel(self):
+        # Create right panel for scan results
+        results_widget = QWidget()
+        results_layout = QVBoxLayout(results_widget)
+        
+        # Title for results
+        title_label = QLabel("Scan Results")
+        title_font = QFont()
+        title_font.setBold(True)
+        title_font.setPointSize(12)
+        title_label.setFont(title_font)
+        results_layout.addWidget(title_label)
+        
+        # Summary info
+        self.summary_label = QLabel("Select and scan a folder to see EXR sequences and their matte files")
+        self.summary_label.setStyleSheet("QLabel { color: #666; font-style: italic; }")
+        results_layout.addWidget(self.summary_label)
+        
+        # Results tree
+        self.results_tree = QTreeWidget()
+        self.results_tree.setHeaderLabels(["Sequence", "Type", "Files"])
+        self.results_tree.setAlternatingRowColors(True)
+        self.results_tree.setRootIsDecorated(True)
+        
+        # Set column resize modes
+        header = self.results_tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, header.ResizeMode.Stretch)  # Sequence column stretches
+        header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)  # Type column fits content
+        header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)  # Files column fits content
+        
+        results_layout.addWidget(self.results_tree)
+        
+        # Warnings section
+        self.warnings_label = QLabel("")
+        self.warnings_label.setStyleSheet("QLabel { color: #e67e22; }")
+        self.warnings_label.setWordWrap(True)
+        results_layout.addWidget(self.warnings_label)
+
+        self.main_splitter.addWidget(results_widget)
 
     def select_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select the main folder containing EXR sequences")
         if folder:
             self.folder_path = folder
             self.folder_path_edit.setText(folder)
+            self.scan_button.setEnabled(True)
+            self.process_button.setEnabled(False)
+            self.results_tree.clear()
+            self.summary_label.setText("Folder selected. Click 'Scan Folder' to analyze sequences.")
+            self.warnings_label.setText("")
+            self.scan_results = None
+            
+            # Save the selected folder to config
+            self.save_config()
+
+    def scan_folder(self):
+        if not self.folder_path:
+            return
+            
+        self.scan_button.setEnabled(False)
+        self.progress_label1.setText("Scanning folder for EXR sequences...")
+        self.progress_label2.setText("")
+        self.progress_bar.setValue(0)
+        
+        # Start scan worker
+        self.scan_worker = ScanWorker(self.processor, self.folder_path)
+        self.scan_worker.scanCompleted.connect(self.scan_completed)
+        self.scan_worker.start()
+
+    def scan_completed(self, results):
+        self.scan_button.setEnabled(True)
+        self.scan_results = results
+        
+        if results.get('error'):
+            QMessageBox.critical(
+                self,
+                "Scan Error",
+                f"An error occurred during scanning:\n{results.get('error_message', 'Unknown error')}"
+            )
+            return
+
+        # Update summary
+        total_sequences = results['total_sequences']
+        total_files = results['total_files']
+        
+        if total_sequences == 0:
+            self.summary_label.setText("No matching EXR sequences found in the selected folder.")
+            self.process_button.setEnabled(False)
+            return
+        
+        summary_text = f"Found {total_sequences} sequence(s) with {total_files} total files to process"
+        self.summary_label.setText(summary_text)
+        
+        # Populate results tree
+        self.populate_results_tree(results)
+        
+        # Show warnings if any
+        if results['warnings']:
+            warning_text = "Warnings:\n" + "\n".join(results['warnings'])
+            self.warnings_label.setText(warning_text)
+        else:
+            self.warnings_label.setText("")
+        
+        # Enable process button
+        self.process_button.setEnabled(True)
+        self.progress_label1.setText("Scan completed. Ready to process.")
+
+    def populate_results_tree(self, results):
+        self.results_tree.clear()
+        
+        # Add regular matte sequences
+        if results['regular_pairs']:
+            regular_root = QTreeWidgetItem(self.results_tree, ["Regular Matte Sequences", "", ""])
+            regular_root.setExpanded(True)
+            
+            for pair in results['regular_pairs']:
+                base_name = os.path.basename(pair['base_folder'])
+                matte_name = os.path.basename(pair['matte_folder'])
+                file_count = len(pair['base_files'])
+                
+                sequence_item = QTreeWidgetItem(regular_root, [
+                    base_name, 
+                    "Single Channel Matte", 
+                    str(file_count)
+                ])
+                
+                # Add details as children
+                QTreeWidgetItem(sequence_item, [f"  → Source: {base_name}", "", ""])
+                QTreeWidgetItem(sequence_item, [f"  → Matte: {matte_name}", "", ""])
+        
+        # Add RGB matte sequences
+        if results['rgb_pairs']:
+            rgb_root = QTreeWidgetItem(self.results_tree, ["RGB Matte Sequences", "", ""])
+            rgb_root.setExpanded(True)
+            
+            for pair in results['rgb_pairs']:
+                base_name = os.path.basename(pair['base_folder'])
+                channels = pair['channels']
+                file_count = len(pair['base_files'])
+                
+                sequence_item = QTreeWidgetItem(rgb_root, [
+                    base_name, 
+                    f"RGB Channels ({', '.join(channels)})", 
+                    str(file_count)
+                ])
+                
+                # Add details as children
+                QTreeWidgetItem(sequence_item, [f"  → Source: {base_name}", "", ""])
+                for channel in channels:
+                    matte_folder = os.path.basename(pair['matte_folders'][channel])
+                    QTreeWidgetItem(sequence_item, [f"  → Matte{channel}: {matte_folder}", "", ""])
+
+        # Column resizing is handled by the header resize modes set in create_results_panel()
 
     def start_processing(self):
-        if not self.folder_path:
-            QMessageBox.critical(self, "Error", "Please select a folder.")
+        if not self.scan_results or self.scan_results['total_sequences'] == 0:
+            QMessageBox.critical(self, "Error", "No sequences found to process.")
             return
 
         self.process_button.setEnabled(False)
@@ -191,9 +419,8 @@ class EXRProcessorGUI(QMainWindow):
         self.start_time = time.time()
         
         processing_args = {
-            'folder': self.folder_path,
+            'scan_results': self.scan_results,
             'compression': self.compression_combo.currentText(),
-            'rgb_mode': self.rgb_checkbox.isChecked(),
             'matte_channel_name': self.matte_channel_name_edit.text(),
             'num_processes': self.process_spinbox.value(),
             'progress_queue': self.progress_queue,

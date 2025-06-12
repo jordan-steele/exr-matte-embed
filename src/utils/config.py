@@ -27,5 +27,7 @@ class Config:
     @staticmethod
     def get_defaults():
         return {
-            'matte_channel_name': 'matte'
+            'matte_channel_name': 'matte',
+            'last_folder_path': '',
+            'compression': 'piz'
         }

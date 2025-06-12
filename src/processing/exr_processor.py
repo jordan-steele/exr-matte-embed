@@ -17,19 +17,30 @@ class EXRProcessor:
             os.environ['PYTHONUNBUFFERED'] = '1'
 
     def find_matching_pairs(self, main_folder, rgb_mode=False):
+        """Find matching main/matte folder pairs"""
         pairs = []
         warnings = []
+        
         if rgb_mode:
+            # Look for RGB matte folders (_matteR, _matteG, _matteB, _matteA)
+            processed_bases = set()
+            
             for root, dirs, files in os.walk(main_folder):
+                # Check if this is a matte folder
                 if any(root.endswith(suffix) for suffix in ['_matteR', '_matteG', '_matteB', '_matteA']):
+                    # Extract base folder name
                     for suffix in ['_matteR', '_matteG', '_matteB', '_matteA']:
                         if root.endswith(suffix):
                             base_folder = root[:-len(suffix)]
                             break
                     
-                    if not os.path.exists(base_folder):
+                    # Skip if we've already processed this base or if base doesn't exist
+                    if base_folder in processed_bases or not os.path.exists(base_folder):
                         continue
-                        
+                    
+                    processed_bases.add(base_folder)
+                    
+                    # Find all available matte channels
                     matte_folders = {}
                     for channel in ['R', 'G', 'B', 'A']:
                         potential_folder = base_folder + f'_matte{channel}'
@@ -39,16 +50,34 @@ class EXRProcessor:
                     if not matte_folders:
                         continue
 
-                    base_files = sorted([f for f in os.listdir(base_folder) if f.endswith('.exr')])
-                    matte_files = {
-                        channel: sorted([f for f in os.listdir(folder) if f.endswith('.exr')])
-                        for channel, folder in matte_folders.items()
-                    }
+                    # Get files from base folder
+                    try:
+                        base_files = sorted([f for f in os.listdir(base_folder) if f.endswith('.exr')])
+                        if not base_files:
+                            warnings.append(f"No EXR files found in base folder: {base_folder}")
+                            continue
+                    except OSError as e:
+                        warnings.append(f"Error reading base folder {base_folder}: {str(e)}")
+                        continue
 
-                    # Ensure all folders have the same number of files
-                    file_counts = [len(files) for files in matte_files.values()]
-                    if len(base_files) != file_counts[0] or len(set(file_counts)) != 1:
-                        warnings.append(f"Mismatch in number of files for {base_folder}")
+                    # Get files from each matte folder and verify counts match
+                    matte_files = {}
+                    file_count_mismatch = False
+                    
+                    for channel, folder in matte_folders.items():
+                        try:
+                            channel_files = sorted([f for f in os.listdir(folder) if f.endswith('.exr')])
+                            if len(channel_files) != len(base_files):
+                                warnings.append(f"File count mismatch for {base_folder}_matte{channel}: expected {len(base_files)}, found {len(channel_files)}")
+                                file_count_mismatch = True
+                                break
+                            matte_files[channel] = channel_files
+                        except OSError as e:
+                            warnings.append(f"Error reading matte folder {folder}: {str(e)}")
+                            file_count_mismatch = True
+                            break
+
+                    if file_count_mismatch:
                         continue
 
                     pairs.append({
@@ -59,15 +88,29 @@ class EXRProcessor:
                         'channels': list(matte_folders.keys())
                     })
         else:
+            # Look for regular single-channel matte folders (_matte)
             for root, dirs, files in os.walk(main_folder):
                 if root.endswith('_matte'):
-                    base_folder = root[:-6]
-                    if os.path.exists(base_folder):
+                    base_folder = root[:-6]  # Remove '_matte' suffix
+                    
+                    if not os.path.exists(base_folder):
+                        warnings.append(f"Base folder not found for matte folder: {root}")
+                        continue
+                    
+                    try:
                         base_files = sorted([f for f in os.listdir(base_folder) if f.endswith('.exr')])
                         matte_files = sorted([f for f in os.listdir(root) if f.endswith('.exr')])
                         
+                        if not base_files:
+                            warnings.append(f"No EXR files found in base folder: {base_folder}")
+                            continue
+                            
+                        if not matte_files:
+                            warnings.append(f"No EXR files found in matte folder: {root}")
+                            continue
+                        
                         if len(base_files) != len(matte_files):
-                            warnings.append(f"Mismatch in number of files for {base_folder}")
+                            warnings.append(f"File count mismatch for {base_folder}: base has {len(base_files)}, matte has {len(matte_files)}")
                             continue
 
                         pairs.append({
@@ -76,9 +119,14 @@ class EXRProcessor:
                             'base_files': base_files,
                             'matte_files': matte_files
                         })
+                    except OSError as e:
+                        warnings.append(f"Error reading folders for {base_folder}: {str(e)}")
+                        continue
+                        
         return pairs, warnings
 
     def process_exr_file(self, base_folder, matte_info, base_file, matte_files, compression, rgb_mode, matte_channel_name):
+        """Process a single EXR file with its matte"""
         try:
             exr1 = OpenEXR.InputFile(os.path.join(base_folder, base_file))
         except Exception as e:
@@ -90,10 +138,12 @@ class EXRProcessor:
             header1['dataWindow'].max.y - header1['dataWindow'].min.y + 1
         )
 
+        # Copy all attributes except 'writer'
         for attribute, value in header1.items():
             if attribute != 'writer':
                 header_out[attribute] = value
 
+        # Copy all existing channels except existing matte channels
         channel_data = {
             channel: exr1.channel(channel, Imath.PixelType(Imath.PixelType.HALF))
             for channel in header1['channels'] 
@@ -101,6 +151,7 @@ class EXRProcessor:
         }
 
         if rgb_mode:
+            # Process RGB matte channels
             matte_channels = {}
             available_channels = list(matte_info.keys())
 
@@ -113,10 +164,13 @@ class EXRProcessor:
                 except Exception as e:
                     raise Exception(f"Error processing matte channel {channel}: {str(e)}")
 
+            # Add matte channels to output
             for i, channel in enumerate(available_channels, 1):
-                header_out['channels'][f'{matte_channel_name}.{i}'] = Imath.Channel(Imath.PixelType(Imath.PixelType.HALF))
-                channel_data[f'{matte_channel_name}.{i}'] = matte_channels[channel]
+                channel_name = f'{matte_channel_name}.{i}'
+                header_out['channels'][channel_name] = Imath.Channel(Imath.PixelType(Imath.PixelType.HALF))
+                channel_data[channel_name] = matte_channels[channel]
         else:
+            # Process single matte channel
             try:
                 exr2 = OpenEXR.InputFile(os.path.join(matte_info['matte_folder'], matte_files))
                 header_out['channels'][matte_channel_name] = Imath.Channel(Imath.PixelType(Imath.PixelType.HALF))
@@ -125,8 +179,10 @@ class EXRProcessor:
             except Exception as e:
                 raise Exception(f"Error processing matte file: {str(e)}")
 
+        # Set compression
         header_out['compression'] = Imath.Compression(self.COMPRESSION_OPTIONS.index(compression))
 
+        # Create output directory
         output_dir = base_folder + '_embedded'
         os.makedirs(output_dir, exist_ok=True)
         
@@ -141,27 +197,36 @@ class EXRProcessor:
         exr1.close()
 
     def process_exr_file_wrapper(self, args):
+        """Wrapper for multiprocessing"""
         try:
             self.process_exr_file(*args)
             return args[0], args[1], args[2], None
         except Exception as e:
             return args[0], args[1], args[2], str(e)
 
-    def process_sequences(self, folder, compression, rgb_mode, matte_channel_name, 
-                        num_processes, progress_queue, result_queue, stop_event):
-
-        pairs, warnings = self.find_matching_pairs(folder, rgb_mode)
-        if not pairs:
-            progress_queue.put({'progress': 0, 'status1': "No matching pairs found.", 'status2': ""})
+    def process_sequences_from_cache(self, scan_results, compression, matte_channel_name, 
+                                   num_processes, progress_queue, result_queue, stop_event):
+        """Process sequences using cached scan results"""
+        
+        regular_pairs = scan_results.get('regular_pairs', [])
+        rgb_pairs = scan_results.get('rgb_pairs', [])
+        warnings = scan_results.get('warnings', [])
+        
+        all_pairs = regular_pairs + rgb_pairs
+        
+        if not all_pairs:
+            progress_queue.put({'progress': 0, 'status1': "No sequences to process.", 'status2': ""})
+            result_queue.put({'success': True})
             stop_event.set()
             return
 
-        total_files = sum(len(pair['base_files']) for pair in pairs)
+        total_files = sum(len(pair['base_files']) for pair in all_pairs)
         processed_files = 0
         error_files = []
 
         start_time = time.time()
 
+        # Determine multiprocessing context
         if sys.platform == 'win32':
             mp_context = multiprocessing.get_context('spawn')
         else:
@@ -169,24 +234,46 @@ class EXRProcessor:
 
         with mp_context.Pool(processes=num_processes) as pool:
             tasks = []
-            for pair_index, pair in enumerate(pairs, 1):
+            
+            # Process regular pairs
+            for pair in regular_pairs:
                 base_folder = pair['base_folder']
-                matte_info = pair['matte_folders'] if rgb_mode else {'matte_folder': pair['matte_folder']}
+                matte_info = {'matte_folder': pair['matte_folder']}
                 
                 for i, base_file in enumerate(pair['base_files']):
-                    matte_files = ({k: v[i] for k, v in pair['matte_files'].items()} if rgb_mode 
-                                 else pair['matte_files'][i])
+                    matte_file = pair['matte_files'][i]
+                    tasks.append((
+                        base_folder,
+                        matte_info,
+                        base_file,
+                        matte_file,
+                        compression,
+                        False,  # rgb_mode = False for regular pairs
+                        matte_channel_name
+                    ))
+            
+            # Process RGB pairs
+            for pair in rgb_pairs:
+                base_folder = pair['base_folder']
+                matte_info = pair['matte_folders']
+                
+                for i, base_file in enumerate(pair['base_files']):
+                    matte_files = {k: v[i] for k, v in pair['matte_files'].items()}
                     tasks.append((
                         base_folder,
                         matte_info,
                         base_file,
                         matte_files,
                         compression,
-                        rgb_mode,
+                        True,  # rgb_mode = True for RGB pairs
                         matte_channel_name
                     ))
 
+            # Process files
             for result in pool.imap_unordered(self.process_exr_file_wrapper, tasks):
+                if stop_event.is_set():
+                    break
+                    
                 processed_files += 1
                 base_folder, _, base_file, error = result
 
@@ -194,8 +281,8 @@ class EXRProcessor:
                     error_files.append((base_file, str(error)))
 
                 progress = (processed_files / total_files) * 100
-                status1 = f"Processing folder: {os.path.basename(base_folder)}"
-                status2 = f"Total progress: {processed_files}/{total_files}"
+                status1 = f"Processing: {os.path.basename(base_folder)}"
+                status2 = f"Progress: {processed_files}/{total_files} files"
                 progress_queue.put({
                     'progress': progress, 
                     'status1': status1, 
@@ -203,6 +290,7 @@ class EXRProcessor:
                     'processed': processed_files
                 })
 
+                # Update timing information
                 elapsed_time = time.time() - start_time
                 avg_time_per_file = elapsed_time / processed_files
                 estimated_time_left = avg_time_per_file * (total_files - processed_files)
@@ -210,17 +298,18 @@ class EXRProcessor:
                     'timing': f"Elapsed: {elapsed_time:.2f}s, Avg: {avg_time_per_file:.2f}s/file, Est. remaining: {estimated_time_left:.2f}s"
                 })
 
+        # Prepare results
         if error_files or warnings:
             error_message = ""
             
             if warnings:
-                error_message += "The following warnings were encountered:\n\n"
+                error_message += "The following warnings were encountered during scanning:\n\n"
                 for warning in warnings:
                     error_message += f"WARNING: {warning}\n"
                 error_message += "\n"
                 
             if error_files:
-                error_message += "The following files encountered errors:\n\n"
+                error_message += "The following files encountered errors during processing:\n\n"
                 for file, error in error_files:
                     error_message += f"{file}: {error}\n"
                     
@@ -233,6 +322,29 @@ class EXRProcessor:
             result_queue.put({'success': True})
 
         stop_event.set()
+
+    def process_sequences(self, folder, compression, rgb_mode, matte_channel_name, 
+                        num_processes, progress_queue, result_queue, stop_event):
+        """Legacy method for backward compatibility - auto-detects mode and processes"""
+        
+        # Scan for both types and auto-detect mode
+        regular_pairs, regular_warnings = self.find_matching_pairs(folder, rgb_mode=False)
+        rgb_pairs, rgb_warnings = self.find_matching_pairs(folder, rgb_mode=True)
+        
+        # Create scan results structure
+        scan_results = {
+            'regular_pairs': regular_pairs,
+            'rgb_pairs': rgb_pairs,
+            'warnings': regular_warnings + rgb_warnings,
+            'total_sequences': len(regular_pairs) + len(rgb_pairs),
+            'total_files': sum(len(pair['base_files']) for pair in regular_pairs + rgb_pairs)
+        }
+        
+        # Process using the new cached method
+        return self.process_sequences_from_cache(
+            scan_results, compression, matte_channel_name,
+            num_processes, progress_queue, result_queue, stop_event
+        )
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
