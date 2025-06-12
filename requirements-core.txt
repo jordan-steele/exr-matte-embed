@@ -1,0 +1,5 @@
+# Core dependencies for EXR processing (CLI)
+OpenEXR
+numpy
+appdirs
+send2trash

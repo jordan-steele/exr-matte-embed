@@ -1,6 +1,2 @@
-OpenEXR
-numpy
-appdirs
-PySide6
-pyqtdarktheme-fork
-send2trash
+# Legacy requirements file - now points to GUI requirements for backward compatibility
+-r requirements-gui.txt
