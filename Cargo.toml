@@ -1,0 +1,22 @@
+[package]
+name = "exr-matte-embed"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Embed delivery mattes in EXR sequences"
+
+[lib]
+path = "rust/lib.rs"
+
+[[bin]]
+name = "exr-matte-prototype"
+path = "rust/prototype.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+exr = "=1.74.2"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"

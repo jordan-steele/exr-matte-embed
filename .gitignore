@@ -38,3 +38,6 @@ Thumbs.db
 # Application specific
 *.exr
 config.json
+
+# Rust
+/target/
