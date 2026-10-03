@@ -1,4 +1,0 @@
-# GUI dependencies (includes core dependencies)
--r requirements-core.txt
-PySide6
-pyqtdarktheme-fork

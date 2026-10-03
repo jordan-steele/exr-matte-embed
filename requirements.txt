@@ -1,2 +1,0 @@
-# Legacy requirements file - now points to GUI requirements for backward compatibility
--r requirements-gui.txt

@@ -1,9 +1,8 @@
 use std::{path::PathBuf, time::Instant};
 
 use anyhow::{Result, bail};
-use clap::{Parser, ValueEnum};
-use exr::prelude::Compression;
-use exr_matte_embed::{MatteInput, embed_file};
+use clap::Parser;
+use exr_matte_embed::{MatteInput, codec::Codec, embed_file};
 
 #[derive(Parser)]
 #[command(about = "Validate the Rust EXR backend on one delivery frame")]
@@ -18,37 +17,6 @@ struct Args {
     output: PathBuf,
     #[arg(long, value_enum, default_value = "piz")]
     compression: Codec,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum Codec {
-    None,
-    Rle,
-    Zip,
-    Zips,
-    Piz,
-    Pxr24,
-    B44,
-    B44a,
-    Dwaa,
-    Dwab,
-}
-
-impl From<Codec> for Compression {
-    fn from(codec: Codec) -> Self {
-        match codec {
-            Codec::None => Self::Uncompressed,
-            Codec::Rle => Self::RLE,
-            Codec::Zip => Self::ZIP16,
-            Codec::Zips => Self::ZIP1,
-            Codec::Piz => Self::PIZ,
-            Codec::Pxr24 => Self::PXR24,
-            Codec::B44 => Self::B44,
-            Codec::B44a => Self::B44A,
-            Codec::Dwaa => Self::DWAA(None),
-            Codec::Dwab => Self::DWAB(None),
-        }
-    }
 }
 
 fn parse_matte(value: &str) -> Result<MatteInput> {

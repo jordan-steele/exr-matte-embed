@@ -1,22 +1,52 @@
 [package]
 name = "exr-matte-embed"
-version = "0.1.0"
+version = "2.0.0-beta.1"
 edition = "2024"
+rust-version = "1.95"
 license = "MIT"
 description = "Embed delivery mattes in EXR sequences"
+default-run = "exr-matte-embed"
 
 [lib]
 path = "rust/lib.rs"
 
 [[bin]]
+name = "exr-matte-embed"
+path = "rust/main.rs"
+required-features = ["gui"]
+
+[[bin]]
+name = "exr-matte-embed-cli"
+path = "rust/cli.rs"
+
+[[bin]]
 name = "exr-matte-prototype"
 path = "rust/prototype.rs"
+
+[[bin]]
+name = "exr-matte-benchmark"
+path = "rust/benchmark.rs"
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 exr = "=1.74.2"
 tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "6"
+walkdir = "2.5"
+trash = "5.2.9"
+ctrlc = "3.5"
+eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"], optional = true }
+egui_extras = { version = "=0.36.2", default-features = false, optional = true }
+rfd = { version = "0.17", optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+open = { version = "5", optional = true }
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:egui_extras", "dep:rfd", "dep:image", "dep:open"]
 
 [profile.release]
 lto = "thin"

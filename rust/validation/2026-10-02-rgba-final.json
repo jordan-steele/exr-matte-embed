@@ -1,0 +1,758 @@
+{
+  "batch_report": {
+    "options": {
+      "compression": "piz",
+      "matte_channel": "DI_Matte",
+      "workers": 4,
+      "output_root": "target/cli-final-validation/deliveries",
+      "replace_originals": false
+    },
+    "sequences": [
+      "/Users/jsteele/Code/GitHub/jordan-steele/exr-matte-embed/target/port-validation/inputs/RGBA_sequence_00",
+      "/Users/jsteele/Code/GitHub/jordan-steele/exr-matte-embed/target/port-validation/inputs/RGBA_sequence_01",
+      "/Users/jsteele/Code/GitHub/jordan-steele/exr-matte-embed/target/port-validation/inputs/RGBA_sequence_02"
+    ],
+    "total": 24,
+    "completed": 24,
+    "successful": 24,
+    "failures": [],
+    "cancelled": false,
+    "elapsed_seconds": 1.33572,
+    "replaced": [],
+    "replacement_errors": []
+  },
+  "independent_checks": [
+    {
+      "engine": "egui-final",
+      "frames_checked": 24,
+      "checks": [
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        }
+      ]
+    },
+    {
+      "engine": "CLI-final",
+      "frames_checked": 24,
+      "checks": [
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_00",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_01",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1050,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1101,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1151,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1201,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1251,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1302,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        },
+        {
+          "sequence": "RGBA_sequence_02",
+          "frame": 1352,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "A",
+            "B",
+            "DI_Matte",
+            "DI_Matte.hero",
+            "G",
+            "R"
+          ]
+        }
+      ]
+    }
+  ]
+}

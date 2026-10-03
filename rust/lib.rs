@@ -1,4 +1,4 @@
-//! The first migration step: matte embedding with lossless PIZ as the default.
+//! Delivery matte embedding with lossless PIZ as the default.
 //! Supports one flat scanline part, as exported by After Effects.
 
 use std::{collections::HashSet, path::Path};
@@ -6,7 +6,12 @@ use std::{collections::HashSet, path::Path};
 use anyhow::{Context, Result, ensure};
 use exr::{meta::BlockDescription, prelude::*};
 
-#[derive(Debug, Clone)]
+pub mod batch;
+pub mod codec;
+pub mod sequences;
+pub mod settings;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MatteInput {
     pub channel: String,
     pub path: std::path::PathBuf,

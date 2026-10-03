@@ -1,0 +1,472 @@
+{
+  "dataset": "Hermes",
+  "engine": "packaged Rust egui app",
+  "source_frames": 1192,
+  "verified_pixel_frames": 33,
+  "compression": "PIZ",
+  "originals_replaced": false,
+  "sequences": [
+    {
+      "sequence": "WAT_216_048_010_v002",
+      "all_output_headers_checked": 378,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1189,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1377,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_020_v001",
+      "all_output_headers_checked": 104,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1052,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1103,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_030_v001",
+      "all_output_headers_checked": 265,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1132,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1264,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_040_v001",
+      "all_output_headers_checked": 79,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1039,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1078,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_050_v001",
+      "all_output_headers_checked": 77,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1038,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1076,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_060_v001",
+      "all_output_headers_checked": 95,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1047,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1094,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_070_v001",
+      "all_output_headers_checked": 54,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1027,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1053,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_080_v001",
+      "all_output_headers_checked": 43,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1021,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1042,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_090_v001",
+      "all_output_headers_checked": 36,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1018,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1035,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_100_v001",
+      "all_output_headers_checked": 32,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1016,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1031,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": "WAT_216_048_120_v001",
+      "all_output_headers_checked": 29,
+      "sample_pixels": [
+        {
+          "frame": 1000,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1014,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        },
+        {
+          "frame": 1028,
+          "metadata": "exact",
+          "base_pixels": "exact",
+          "matte_pixels": "exact",
+          "channels": [
+            "B",
+            "G",
+            "R",
+            "matte"
+          ]
+        }
+      ]
+    }
+  ]
+}

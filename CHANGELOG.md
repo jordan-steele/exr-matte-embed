@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-beta.1] - 2026-10-02
+### Changed
+- Ported the desktop application from Python/PySide to Rust/egui and the headless CLI to the same Rust batch engine.
+- Retained Python 1.1.0 on the permanent `python-1.1.0` branch.
+- Default to up to four parallel frame workers with an automatically bounded codec thread budget, based on measured Centaur and Hermes performance.
+- Migrated packaging and Jenkins artifact builds to Rust; beta builds do not publish releases automatically.
+
+### Added
+- Sequence selection, queue filtering, channel/destination inspection, custom output roots, light/dark appearance, cancellation, and JSON batch reports.
+- Numeric frame matching across different prefixes and padding; early layout, matte R, and data-window checks.
+- Atomic output publication without overwriting existing files; source backup retention if replacement cannot send originals to Trash.
+- Independent OpenEXR validation, repeatable Python-versus-Rust benchmarks, and native application screenshots.
+
 ## [1.1.0] - 2025-06-12
 ### Added
 - Added ability for arbitrary named mattes so matte layers aren't required to be matteR, matteG, etc. 
