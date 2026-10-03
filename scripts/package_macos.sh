@@ -15,6 +15,8 @@ task_bundle="$task_target_dir/EXR Matte Embed.app"
 task_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
 task_numeric_version="${task_version%%-*}"
 mkdir -p "$task_bundle/Contents/MacOS" "$task_bundle/Contents/Resources"
+mkdir -p "$task_bundle/Contents/Resources/licenses"
+cp licenses/egui-phosphor-MIT.txt licenses/phosphor-icons-MIT.txt "$task_bundle/Contents/Resources/licenses/"
 cp "$task_release_dir/exr-matte-embed" "$task_bundle/Contents/MacOS/EXR Matte Embed"
 cp images/icon.icns "$task_bundle/Contents/Resources/icon.icns"
 cat > "$task_bundle/Contents/Info.plist" <<PLIST

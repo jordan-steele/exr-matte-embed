@@ -74,3 +74,5 @@ Native macOS testing is documented in [rust/VALIDATION.md](rust/VALIDATION.md). 
 ## License
 
 [MIT](LICENSE).
+
+Interface icons use [Phosphor Icons](https://phosphoricons.com/) through [egui-phosphor](https://github.com/amPerl/egui-phosphor). Their MIT notices are in [licenses/](licenses/) and included in the macOS app bundle.

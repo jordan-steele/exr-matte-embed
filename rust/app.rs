@@ -19,6 +19,14 @@ use std::{
     time::Duration,
 };
 
+egui_phosphor::subset! {
+    mod icons {
+        use regular::{SUN, MOON, FOLDER_OPEN, CARET_DOWN, CARET_RIGHT};
+    }
+}
+
+const ICON_FONT: &str = "app-icons";
+
 enum UiEvent {
     Scan(Result<ScanResult, String>),
     Batch(BatchEvent),
@@ -132,7 +140,7 @@ impl MatteApp {
         if args.run {
             preferences.replace_originals = false;
         }
-        set_system_font(&cc.egui_ctx);
+        set_fonts(&cc.egui_ctx);
         set_theme(&cc.egui_ctx, preferences.dark_mode);
         let png = image::load_from_memory(include_bytes!("../images/icon.png"))
             .unwrap()
@@ -1435,40 +1443,19 @@ fn appearance_button(ui: &mut Ui, dark: bool, palette: Palette) -> egui::Respons
     } else {
         "Use dark appearance"
     };
-    let response = ui.add(
-        egui::Button::new("")
-            .min_size(egui::vec2(30.0, 30.0))
-            .corner_radius(5),
-    );
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
-    });
-    let center = response.rect.center();
-    let stroke = Stroke::new(1.5, palette.text);
-    if dark {
-        ui.painter().circle_stroke(center, 4.5, stroke);
-        for ray in 0..8 {
-            let direction = egui::Vec2::angled(ray as f32 * std::f32::consts::TAU / 8.0);
-            ui.painter().line_segment(
-                [center + direction * 7.0, center + direction * 10.0],
-                stroke,
-            );
-        }
-    } else {
-        for offsets in [
-            [[4.0, -8.0], [-9.0, -7.0], [-9.0, 8.0], [4.0, 8.0]],
-            [[4.0, 8.0], [-4.0, 5.0], [-4.0, -4.0], [4.0, -8.0]],
-        ] {
-            ui.painter()
-                .add(egui::epaint::CubicBezierShape::from_points_stroke(
-                    offsets.map(|[x, y]| center + egui::vec2(x, y)),
-                    false,
-                    Color32::TRANSPARENT,
-                    stroke,
-                ));
-        }
-    }
-    response.on_hover_text(label)
+    icon_button(
+        ui,
+        if dark {
+            icons::regular::SUN
+        } else {
+            icons::regular::MOON
+        },
+        label,
+        egui::vec2(30.0, 30.0),
+        20.0,
+        palette.text,
+        true,
+    )
 }
 
 fn badge(ui: &mut Ui, text: &str, color: Color32) {
@@ -1483,46 +1470,64 @@ fn badge(ui: &mut Ui, text: &str, color: Color32) {
 }
 
 fn folder_button(ui: &mut Ui, label: &str, palette: Palette) -> egui::Response {
-    let response = ui.add(egui::Button::new("").min_size(egui::vec2(28.0, 26.0)));
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
-    });
-    let c = response.rect.center();
-    let points = [
-        [-8.0, -5.0],
-        [-2.0, -5.0],
-        [0.0, -2.0],
-        [8.0, -2.0],
-        [8.0, 6.0],
-        [-8.0, 6.0],
-        [-8.0, -5.0],
-    ];
-    ui.painter().add(egui::Shape::line(
-        points.map(|[x, y]| c + egui::vec2(x, y)).to_vec(),
-        Stroke::new(1.3, palette.accent),
-    ));
-    response.on_hover_text(label)
+    icon_button(
+        ui,
+        icons::regular::FOLDER_OPEN,
+        label,
+        egui::vec2(28.0, 26.0),
+        19.0,
+        palette.accent,
+        true,
+    )
 }
 
 fn disclosure_button(ui: &mut Ui, open: bool, label: &str, palette: Palette) -> egui::Response {
-    let response = ui.add(
-        egui::Button::new("")
-            .frame(false)
-            .min_size(egui::vec2(15.0, 22.0)),
-    );
+    icon_button(
+        ui,
+        if open {
+            icons::regular::CARET_DOWN
+        } else {
+            icons::regular::CARET_RIGHT
+        },
+        label,
+        egui::vec2(15.0, 22.0),
+        12.0,
+        palette.muted,
+        false,
+    )
+}
+
+fn icon_button(
+    ui: &mut Ui,
+    glyph: &str,
+    label: &str,
+    size: egui::Vec2,
+    font_size: f32,
+    color: Color32,
+    frame: bool,
+) -> egui::Response {
+    let response = ui
+        .scope(|ui| {
+            // Glyphs use their own font and padding so platform fonts cannot substitute
+            // private-use characters or change the compact disclosure column's width.
+            ui.spacing_mut().button_padding = egui::Vec2::ZERO;
+            let icon = RichText::new(glyph)
+                .font(egui::FontId::new(
+                    font_size,
+                    egui::FontFamily::Name(ICON_FONT.into()),
+                ))
+                .color(color);
+            ui.add(
+                egui::Button::new((egui::Atom::grow(), icon, egui::Atom::grow()))
+                    .min_size(size)
+                    .frame(frame)
+                    .corner_radius(4),
+            )
+        })
+        .inner;
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
     });
-    let c = response.rect.center();
-    let offsets = if open {
-        [[-3.5, -1.5], [0.0, 2.0], [3.5, -1.5]]
-    } else {
-        [[-1.5, -3.5], [2.0, 0.0], [-1.5, 3.5]]
-    };
-    ui.painter().add(egui::Shape::line(
-        offsets.map(|[x, y]| c + egui::vec2(x, y)).to_vec(),
-        Stroke::new(1.3, palette.muted),
-    ));
     response.on_hover_text(label)
 }
 
@@ -1543,7 +1548,7 @@ fn number(value: usize) -> String {
     formatted
 }
 
-fn set_system_font(ctx: &egui::Context) {
+fn set_fonts(ctx: &egui::Context) {
     // Read the platform font in place; do not bundle or redistribute it.
     let candidates: &[&str] = if cfg!(target_os = "macos") {
         &["/System/Library/Fonts/SFNS.ttf"]
@@ -1555,8 +1560,8 @@ fn set_system_font(ctx: &egui::Context) {
             "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
         ]
     };
+    let mut fonts = egui::FontDefinitions::default();
     if let Some(data) = candidates.iter().find_map(|path| std::fs::read(path).ok()) {
-        let mut fonts = egui::FontDefinitions::default();
         fonts
             .font_data
             .insert("system-ui".into(), egui::FontData::from_owned(data).into());
@@ -1565,8 +1570,16 @@ fn set_system_font(ctx: &egui::Context) {
             .entry(egui::FontFamily::Proportional)
             .or_default()
             .insert(0, "system-ui".into());
-        ctx.set_fonts(fonts);
     }
+    fonts.font_data.insert(
+        ICON_FONT.into(),
+        egui::FontData::from_static(&icons::regular::FONT).into(),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name(ICON_FONT.into()),
+        vec![ICON_FONT.into()],
+    );
+    ctx.set_fonts(fonts);
 }
 
 fn duration(seconds: f64) -> String {

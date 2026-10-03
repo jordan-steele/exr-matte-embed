@@ -40,13 +40,14 @@ trash = "5.2.9"
 ctrlc = "3.5"
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"], optional = true }
 egui_extras = { version = "=0.36.2", default-features = false, optional = true }
+egui-phosphor = { version = "=0.14.0", default-features = false, features = ["subset"], optional = true }
 rfd = { version = "0.17", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 open = { version = "5", optional = true }
 
 [features]
 default = ["gui"]
-gui = ["dep:eframe", "dep:egui_extras", "dep:rfd", "dep:image", "dep:open"]
+gui = ["dep:eframe", "dep:egui_extras", "dep:egui-phosphor", "dep:rfd", "dep:image", "dep:open"]
 
 [profile.release]
 lto = "thin"
