@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-02",
+  "scope": "Desktop UI refinement RGBA smoke check",
+  "outputs": 24,
+  "source": "generated 3840x2160 RGBA fixtures",
+  "base_pixels": "exact RGBA",
+  "matte_pixels": "exact HALF R for matte and matte.hero",
+  "metadata": "exact",
+  "frame_errors": 0
+}

@@ -11,9 +11,9 @@ The Rust application is **2.0.0 beta** on `rust-migration`. The complete Python/
 ## Delivery workflow
 
 1. Choose or drop a folder containing source sequences and their `_matte*` sibling folders, then scan it.
-2. Select the sequences to embed. The queue shows frame counts and any problems; selecting a row shows its channels and destination.
+2. Select the sequences to embed. Expand a sequence to see its source and matte channels; selecting a row shows its details and destination. Filtering matches sequence and matte folder names, and the header checkbox selects only visible ready sequences.
 3. Choose compression, matte prefix, worker count, and destination. PIZ and four frame workers are the defaults (fewer on smaller machines).
-4. Embed the batch. Progress, elapsed time, frame rate, and an estimate of remaining time appear below the queue. Stop finishes active frames and leaves completed outputs in place.
+4. Embed the batch. Progress, elapsed time, frame rate, and an estimate of remaining time appear below the processing controls. Stop stays visible at the bottom of that pane, finishes active frames, and leaves completed outputs in place.
 
 For example:
 
