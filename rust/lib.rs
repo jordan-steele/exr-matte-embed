@@ -1,7 +1,12 @@
 //! Delivery matte embedding with lossless PIZ as the default.
 //! Supports one flat scanline part, as exported by After Effects.
 
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::HashSet,
+    fs::File,
+    io::{BufReader, Seek, SeekFrom},
+    path::Path,
+};
 
 use anyhow::{Context, Result, ensure};
 use exr::{meta::BlockDescription, prelude::*};
@@ -18,8 +23,11 @@ pub struct MatteInput {
 }
 
 /// Read a delivery image without silently discarding parts or resolution levels.
+/// The header is validated before any pixels are decoded, using one open file.
 fn read_delivery(path: &Path) -> Result<FlatImage> {
-    let metadata = MetaData::read_from_file(path, false)
+    let mut file =
+        BufReader::new(File::open(path).with_context(|| format!("Opening {}", path.display()))?);
+    let metadata = MetaData::read_from_buffered(&mut file, false)
         .with_context(|| format!("Reading header: {}", path.display()))?;
     ensure!(
         metadata.headers.len() == 1,
@@ -46,14 +54,24 @@ fn read_delivery(path: &Path) -> Result<FlatImage> {
         "Subsampled channels are unsupported: {}",
         path.display()
     );
-    read_all_flat_layers_from_file(path)
+    file.seek(SeekFrom::Start(0))?;
+    read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .all_channels()
+        .all_layers()
+        .all_attributes()
+        .from_buffered(file)
         .with_context(|| format!("Reading pixels: {}", path.display()))
 }
 
 /// Preserve base sample types and attributes; replace only explicitly named mattes.
 /// Choosing a lossy output codec can change the encoded pixel values.
-/// Matte values come from R and are stored as HALF, matching the Python tool.
+/// Matte values come from R and keep its sample type (HALF, FLOAT or UINT) and
+/// pLinear flag. Python 1.x converted every channel to HALF instead.
 /// Publish a complete output atomically and never overwrite an existing file.
+/// Outputs are not flushed to disk per frame; replacement syncs them before
+/// moving any original (see `batch::replace_sequence`).
 pub fn embed_file(
     base_path: &Path,
     mattes: &[MatteInput],
@@ -105,16 +123,10 @@ pub fn embed_file(
             .position(|channel| channel.name.as_slice() == b"R")
             .with_context(|| format!("Matte has no R channel: {}", matte.path.display()))?;
         let red = matte_layer.channel_data.list.remove(red_index);
-        let half_samples = match red.sample_data {
-            FlatSamples::F16(samples) => samples,
-            FlatSamples::F32(samples) => samples.into_iter().map(f16::from_f32).collect(),
-            FlatSamples::U32(samples) => samples
-                .into_iter()
-                .map(|value| f16::from_f32(value as f32))
-                .collect(),
+        let channel = AnyChannel {
+            name: matte.channel.as_str().into(),
+            ..red
         };
-        let mut channel = AnyChannel::new(matte.channel.as_str(), FlatSamples::F16(half_samples));
-        channel.quantize_linearly = true;
         layer
             .channel_data
             .list
@@ -134,7 +146,6 @@ pub fn embed_file(
     base.write()
         .to_unbuffered(temporary.as_file_mut())
         .with_context(|| format!("Writing EXR: {}", output_path.display()))?;
-    temporary.as_file().sync_all()?;
     temporary
         .persist_noclobber(output_path)
         .with_context(|| format!("Publishing EXR: {}", output_path.display()))?;

@@ -62,11 +62,21 @@ impl Codec {
         }
     }
 
-    pub fn lossy(self) -> bool {
-        matches!(
-            self,
-            Self::Pxr24 | Self::B44 | Self::B44a | Self::Dwaa | Self::Dwab
-        )
+    /// Which samples a lossy codec can change; `None` for lossless codecs.
+    /// Verified per sample type against the `exr` encoder, not just its name.
+    pub fn lossy_note(self) -> Option<&'static str> {
+        match self {
+            Self::Pxr24 => {
+                Some("PXR24 rounds FLOAT channels to 24 bits. HALF and UINT stay exact.")
+            }
+            Self::B44 | Self::B44a => {
+                Some("B44 compresses HALF channels lossily. FLOAT and UINT stay exact.")
+            }
+            Self::Dwaa | Self::Dwab => {
+                Some("DWA compresses R, G and B lossily. Matte channels stay exact.")
+            }
+            _ => None,
+        }
     }
 }
 

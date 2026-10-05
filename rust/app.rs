@@ -4,7 +4,7 @@ use egui_extras::{Column, TableBuilder};
 use exr_matte_embed::{
     batch::{self, BatchEvent, BatchOptions, BatchReport, Plan},
     codec::Codec,
-    sequences::{self, ScanResult},
+    sequences::{self, ImageInfo, ScanResult, Sequence},
     settings::{self, Settings},
 };
 use std::{
@@ -21,11 +21,34 @@ use std::{
 
 egui_phosphor::subset! {
     mod icons {
-        use regular::{SUN, MOON, FOLDER_OPEN, CARET_DOWN, CARET_RIGHT};
+        use regular::{SUN, MOON, FOLDER_OPEN, CARET_DOWN, CARET_RIGHT, WARNING_CIRCLE, X};
     }
 }
 
 const ICON_FONT: &str = "app-icons";
+const TRASH: &str = if cfg!(target_os = "windows") {
+    "the Recycle Bin"
+} else {
+    "Trash"
+};
+const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
+    "Show in Finder"
+} else if cfg!(target_os = "windows") {
+    "Show in Explorer"
+} else {
+    "Open folder"
+};
+const TITLE: &str = "EXR Matte Embed";
+const FILTER_ID: &str = "sequence-filter";
+/// Text-field edits are saved once typing pauses, not on every keystroke.
+const SAVE_DELAY: f64 = 0.6;
+
+const OPEN_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O);
+const SCAN_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::R);
+const FIND_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::F);
 
 enum UiEvent {
     Scan(Result<ScanResult, String>),
@@ -93,6 +116,8 @@ impl Palette {
 pub struct MatteApp {
     settings: Settings,
     config_path: Option<PathBuf>,
+    unsaved_since: Option<f64>,
+    title: String,
     scan: Option<ScanResult>,
     enabled: Vec<bool>,
     expanded: BTreeSet<usize>,
@@ -156,6 +181,8 @@ impl MatteApp {
         Self {
             settings: preferences,
             config_path: args.config.or_else(settings::config_path),
+            unsaved_since: None,
+            title: TITLE.into(),
             scan: None,
             enabled: Vec::new(),
             expanded: BTreeSet::new(),
@@ -208,10 +235,44 @@ impl MatteApp {
     }
 
     fn persist(&mut self) {
+        self.unsaved_since = None;
         if let Some(path) = &self.config_path
             && let Err(error) = settings::save(&self.settings, path)
         {
             self.error = Some(format!("Could not save preferences: {error:#}"));
+        }
+    }
+
+    fn mark_unsaved(&mut self, ctx: &egui::Context) {
+        self.unsaved_since = Some(ctx.input(|input| input.time));
+    }
+
+    /// Debounced save: preferences are written atomically with a full flush,
+    /// which is too slow to repeat for every keystroke or drag step.
+    fn save_when_idle(&mut self, ctx: &egui::Context) {
+        let Some(since) = self.unsaved_since else {
+            return;
+        };
+        let waited = ctx.input(|input| input.time) - since;
+        if waited >= SAVE_DELAY {
+            self.persist();
+        } else {
+            ctx.request_repaint_after(Duration::from_secs_f64(SAVE_DELAY - waited));
+        }
+    }
+
+    fn choose_source(&mut self, ctx: &egui::Context) {
+        if self.busy() {
+            return;
+        }
+        let mut dialog = rfd::FileDialog::new().set_title("Choose a delivery folder");
+        let current = Path::new(&self.settings.last_folder_path);
+        if current.is_dir() {
+            dialog = dialog.set_directory(current);
+        }
+        if let Some(path) = dialog.pick_folder() {
+            self.settings.last_folder_path = path.display().to_string();
+            self.start_scan(ctx);
         }
     }
 
@@ -230,17 +291,19 @@ impl MatteApp {
     }
 
     fn start_scan(&mut self, ctx: &egui::Context) {
-        if self.busy() {
+        if self.busy() || self.settings.last_folder_path.trim().is_empty() {
             return;
         }
         self.reset_results();
         self.error = None;
         self.scanning = true;
-        let root = PathBuf::from(&self.settings.last_folder_path);
+        self.stop = Arc::new(AtomicBool::new(false));
+        let stop = self.stop.clone();
+        let root = PathBuf::from(self.settings.last_folder_path.trim());
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         self.worker = Some(std::thread::spawn(move || {
-            let result = sequences::scan(&root).map_err(|error| format!("{error:#}"));
+            let result = sequences::scan_until(&root, &stop).map_err(|error| format!("{error:#}"));
             let _ = tx.send(UiEvent::Scan(result));
             ctx.request_repaint();
         }));
@@ -251,16 +314,10 @@ impl MatteApp {
         if self.busy() {
             return;
         }
-        let Some(scan) = &self.scan else {
+        if self.scan.is_none() {
             return;
-        };
-        let chosen = scan
-            .sequences
-            .iter()
-            .zip(&self.enabled)
-            .filter(|(_, enabled)| **enabled)
-            .map(|(sequence, _)| sequence.clone())
-            .collect();
+        }
+        let chosen = self.included().into_iter().cloned().collect();
         if self.settings.custom_output && self.settings.output_root.trim().is_empty() {
             self.error = Some("Choose a destination folder or use outputs beside sources.".into());
             return;
@@ -328,6 +385,9 @@ impl MatteApp {
             match event {
                 UiEvent::Scan(result) => {
                     self.scanning = false;
+                    if let Some(worker) = self.worker.take() {
+                        let _ = worker.join();
+                    }
                     match result {
                         Ok(scan) => {
                             self.expanded = (0..if scan.sequences.len() <= 3 {
@@ -336,10 +396,11 @@ impl MatteApp {
                                 1
                             })
                                 .collect();
+                            let custom = self.settings.custom_output;
                             self.enabled = scan
                                 .sequences
                                 .iter()
-                                .map(|sequence| sequence.ready())
+                                .map(|sequence| selectable(sequence, custom))
                                 .collect();
                             self.log(format!(
                                 "Found {} sequences and {} frames.",
@@ -348,6 +409,9 @@ impl MatteApp {
                             ));
                             self.scan = Some(scan);
                             self.inspected = 0;
+                        }
+                        Err(_) if self.stop.load(Ordering::Acquire) => {
+                            self.log("Scan cancelled.".into());
                         }
                         Err(error) => self.error = Some(error),
                     }
@@ -397,6 +461,11 @@ impl MatteApp {
                     if let Some(worker) = self.worker.take() {
                         let _ = worker.join();
                     }
+                    if ctx.input(|input| input.viewport().focused) == Some(false) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                            egui::UserAttentionType::Informational,
+                        ));
+                    }
                 }
                 UiEvent::Failed(error) => {
                     self.scanning = false;
@@ -418,14 +487,18 @@ impl MatteApp {
         ui.horizontal(|ui| {
             ui.add(egui::Image::new(&self.logo).fit_to_exact_size(egui::vec2(26.0, 26.0)));
             ui.add_space(3.0);
-            ui.label(RichText::new("EXR Matte Embed").size(16.0).strong());
+            ui.label(RichText::new(TITLE).size(16.0).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if appearance_button(ui, self.settings.dark_mode, palette).clicked() {
                     self.settings.dark_mode = !self.settings.dark_mode;
                     set_theme(ui.ctx(), self.settings.dark_mode);
                     self.persist();
                 }
-                ui.label(RichText::new("2.0.0 beta").size(11.0).color(palette.muted));
+                ui.label(
+                    RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
+                        .size(11.0)
+                        .color(palette.muted),
+                );
             });
         });
     }
@@ -434,23 +507,25 @@ impl MatteApp {
         let busy = self.busy();
         let ctx = ui.ctx().clone();
         let mut changed = false;
+        let mut submitted = false;
+        let mut choose = false;
         if busy {
             egui::Panel::bottom("running-action")
                 .exact_size(46.0)
                 .frame(Frame::new().inner_margin(Margin::symmetric(0, 6)))
                 .show(ui, |ui| {
                     let stopping = self.stop.load(Ordering::Acquire);
+                    let label = match (self.scanning, stopping) {
+                        (true, false) => "Cancel scan",
+                        (true, true) => "Cancelling scan…",
+                        (false, false) => "Stop after current frames",
+                        (false, true) => "Stopping after current frames…",
+                    };
                     if ui
                         .add_enabled(
-                            self.processing && !stopping,
-                            egui::Button::new(if stopping {
-                                "Stopping…"
-                            } else if self.scanning {
-                                "Scanning…"
-                            } else {
-                                "Stop after current frames"
-                            })
-                            .min_size(egui::vec2(ui.available_width(), 34.0)),
+                            !stopping,
+                            egui::Button::new((egui::Atom::grow(), label, egui::Atom::grow()))
+                                .min_size(egui::vec2(ui.available_width(), 34.0)),
                         )
                         .clicked()
                     {
@@ -468,19 +543,20 @@ impl MatteApp {
                     ui.horizontal(|ui| {
                         let width = (ui.available_width() - 41.0).max(100.0);
                         let source = ui.add(egui::TextEdit::singleline(&mut self.settings.last_folder_path)
-                            .hint_text("Choose or drop a folder").desired_width(width));
+                            .hint_text("Choose, paste or drop a folder").desired_width(width));
                         if source.changed() { self.reset_results(); changed = true; }
+                        submitted = source.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
                         source.on_hover_text(&self.settings.last_folder_path);
-                        if folder_button(ui, "Choose source folder", palette).clicked()
-                            && let Some(path) = rfd::FileDialog::new().set_title("Choose a delivery folder").pick_folder() {
-                            self.settings.last_folder_path = path.display().to_string();
-                            self.reset_results(); changed = true;
+                        if folder_button(ui, &format!("Choose source folder ({})", ctx.format_shortcut(&OPEN_SHORTCUT)), palette).clicked() {
+                            choose = true;
                         }
                     });
                     ui.add_space(2.0);
-                    let scan_button = egui::Button::new((egui::Atom::grow(), RichText::new("Scan folder").color(palette.accent), egui::Atom::grow()))
+                    let label = if self.scan.is_some() { "Rescan folder" } else { "Scan folder" };
+                    let scan_button = egui::Button::new((egui::Atom::grow(), RichText::new(label).color(palette.accent), egui::Atom::grow()))
                         .min_size(egui::vec2(ui.available_width(), 28.0));
-                    if ui.add_enabled(!self.settings.last_folder_path.trim().is_empty(), scan_button).clicked() {
+                    if ui.add_enabled(!self.settings.last_folder_path.trim().is_empty(), scan_button)
+                        .on_hover_text(ctx.format_shortcut(&SCAN_SHORTCUT)).clicked() || submitted {
                         self.start_scan(&ctx);
                     }
                 });
@@ -494,9 +570,9 @@ impl MatteApp {
                         egui::ComboBox::from_id_salt("compression").width(control_width)
                             .selected_text(self.settings.compression.label()).show_ui(ui, |ui| {
                             for codec in Codec::ALL {
-                                changed |= ui.selectable_value(&mut self.settings.compression, codec, codec.label()).changed();
+                                changed |= ui.selectable_value(&mut self.settings.compression, codec, codec_label(codec, palette)).changed();
                             }
-                        }).response.on_hover_text("Lossless codecs preserve every image sample. DWAA, DWAB and B44 codecs are lossy.");
+                        }).response.on_hover_text("None, RLE, ZIP, ZIPS and PIZ preserve every sample exactly. PIZ is the validated default.");
                         ui.end_row();
                         ui.label("Matte channel name");
                         changed |= ui.add(egui::TextEdit::singleline(&mut self.settings.matte_channel_name)
@@ -509,9 +585,9 @@ impl MatteApp {
                                 (settings::cpu_count() / self.settings.workers.max(1)).max(1))).changed();
                         ui.end_row();
                     });
-                    if self.settings.compression.lossy() {
+                    if let Some(note) = self.settings.compression.lossy_note() {
                         ui.add_space(4.0);
-                        ui.label(RichText::new("Lossy compression can change image samples.").size(11.0).color(palette.warning));
+                        ui.label(RichText::new(note).size(11.0).color(palette.warning));
                     }
                     if let Err(error) = sequences::validate_prefix(&self.settings.matte_channel_name) {
                         ui.label(RichText::new(error.to_string()).size(11.0).color(palette.warning));
@@ -520,8 +596,8 @@ impl MatteApp {
                     ui.separator();
                     ui.add_space(3.0);
                     changed |= ui.add_enabled(!self.settings.custom_output,
-                        egui::Checkbox::new(&mut self.settings.replace_originals, "Replace originals (move to Trash)"))
-                        .on_hover_text("After every frame succeeds, publish completed sequences and move original source and matte folders to Trash.").changed();
+                        egui::Checkbox::new(&mut self.settings.replace_originals, format!("Replace originals (move to {TRASH})")))
+                        .on_hover_text(format!("After every frame succeeds, publish completed sequences and move original source and matte folders to {TRASH}.")).changed();
                     if self.settings.replace_originals {
                         ui.label(RichText::new("Review replacement before processing.").size(11.0).color(palette.warning));
                     }
@@ -540,9 +616,14 @@ impl MatteApp {
                             let width = (ui.available_width() - 41.0).max(100.0);
                             changed |= ui.add(egui::TextEdit::singleline(&mut self.settings.output_root)
                                 .hint_text("Destination root").desired_width(width)).on_hover_text(&self.settings.output_root).changed();
-                            if folder_button(ui, "Choose destination folder", palette).clicked()
-                                && let Some(path) = rfd::FileDialog::new().set_title("Choose the destination root").pick_folder() {
-                                self.settings.output_root = path.display().to_string(); changed = true;
+                            if folder_button(ui, "Choose destination folder", palette).clicked() {
+                                let mut dialog = rfd::FileDialog::new().set_title("Choose the destination root");
+                                if Path::new(&self.settings.output_root).is_dir() {
+                                    dialog = dialog.set_directory(&self.settings.output_root);
+                                }
+                                if let Some(path) = dialog.pick_folder() {
+                                    self.settings.output_root = path.display().to_string(); changed = true;
+                                }
                             }
                         });
                     }
@@ -550,15 +631,18 @@ impl MatteApp {
                 });
             });
             ui.add_space(10.0);
-            if !busy {
+            if !busy && self.report.is_some() {
+                // Finished batches leave outputs (and possibly replaced folders) behind,
+                // so the next batch starts from a fresh scan.
+                if ui.add(primary_button("Rescan for another batch", ui.available_width()))
+                    .on_hover_text("Outputs from this batch now exist and are never overwritten.").clicked() {
+                    self.start_scan(&ctx);
+                }
+            } else if !busy {
                 let chosen = self.chosen_frames();
                 let can_run = chosen > 0 && sequences::validate_prefix(&self.settings.matte_channel_name).is_ok();
                 let label = if chosen > 0 { format!("Embed {} frames", number(chosen)) } else { "Embed sequences".into() };
-                let button = egui::Button::new((egui::Atom::grow(), RichText::new(label).strong().color(Color32::WHITE), egui::Atom::grow()))
-                    .fill(Color32::from_rgb(44, 117, 205))
-                    .stroke(Stroke::new(1.0, Color32::from_rgb(66, 137, 224)))
-                    .min_size(egui::vec2(ui.available_width(), 34.0));
-                if ui.add_enabled(can_run, button).clicked() {
+                if ui.add_enabled(can_run, primary_button(&label, ui.available_width())).clicked() {
                     if self.settings.replace_originals { self.confirm_replace = true; }
                     else { self.start_batch(&ctx); }
                 }
@@ -569,37 +653,73 @@ impl MatteApp {
                 self.footer(ui, palette);
             });
         });
+        if choose {
+            self.choose_source(&ctx);
+        }
         if changed {
-            self.persist();
+            self.mark_unsaved(&ctx);
         }
     }
 
-    fn chosen_frames(&self) -> usize {
-        self.scan
-            .as_ref()
-            .map(|scan| {
-                scan.sequences
-                    .iter()
-                    .zip(&self.enabled)
-                    .filter(|(_, enabled)| **enabled)
-                    .map(|(sequence, _)| sequence.files.len())
-                    .sum()
+    /// Checked sequences that can currently be written.
+    fn included(&self) -> Vec<&Sequence> {
+        let Some(scan) = &self.scan else {
+            return Vec::new();
+        };
+        scan.sequences
+            .iter()
+            .zip(&self.enabled)
+            .filter(|(sequence, enabled)| {
+                **enabled && selectable(sequence, self.settings.custom_output)
             })
-            .unwrap_or(0)
+            .map(|(sequence, _)| sequence)
+            .collect()
+    }
+
+    fn chosen_frames(&self) -> usize {
+        self.included()
+            .iter()
+            .map(|sequence| sequence.files.len())
+            .sum()
     }
 
     fn queue(&mut self, ui: &mut Ui, palette: Palette) {
+        let mut open_dialog = false;
         let mut filter_changed = false;
         ui.horizontal(|ui| {
             ui.label(RichText::new("Scan results").size(14.0).strong());
+            if self.scan.is_none() {
+                return;
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                filter_changed = ui
-                    .add(
-                        egui::TextEdit::singleline(&mut self.query)
-                            .hint_text("Filter sequences…")
-                            .desired_width(174.0),
+                let filter = ui.add(
+                    egui::TextEdit::singleline(&mut self.query)
+                        .id(egui::Id::new(FILTER_ID))
+                        .hint_text("Filter sequences…")
+                        .desired_width(174.0),
+                );
+                filter_changed = filter.changed();
+                if filter.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                    self.query.clear();
+                }
+                filter.on_hover_text(format!(
+                    "Match sequence or matte folder names ({}). Esc clears.",
+                    ui.ctx().format_shortcut(&FIND_SHORTCUT)
+                ));
+                if !self.query.is_empty()
+                    && icon_button(
+                        ui,
+                        icons::regular::X,
+                        "Clear filter",
+                        egui::vec2(22.0, 22.0),
+                        13.0,
+                        palette.muted,
+                        false,
                     )
-                    .changed();
+                    .clicked()
+                {
+                    self.query.clear();
+                }
             });
         });
         let Some(scan) = &self.scan else {
@@ -608,6 +728,12 @@ impl MatteApp {
                 if self.scanning {
                     ui.spinner();
                     ui.label(RichText::new("Scanning delivery folder…").size(16.0));
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(&self.settings.last_folder_path)
+                            .size(12.0)
+                            .color(palette.muted),
+                    );
                 } else {
                     ui.label(
                         RichText::new("Choose a folder to get started")
@@ -616,11 +742,18 @@ impl MatteApp {
                     );
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new(
-                            "Drop a delivery folder here, or browse in Processing controls.",
-                        )
-                        .color(palette.muted),
+                        RichText::new("Drop a delivery folder anywhere in this window.")
+                            .color(palette.muted),
                     );
+                    ui.add_space(14.0);
+                    let shortcut = ui.ctx().format_shortcut(&OPEN_SHORTCUT);
+                    if ui
+                        .add(egui::Button::new("Choose folder…").min_size(egui::vec2(150.0, 30.0)))
+                        .on_hover_text(shortcut)
+                        .clicked()
+                    {
+                        open_dialog = true;
+                    }
                     ui.add_space(24.0);
                     ui.label(
                         RichText::new("Source and matching _matte folders will appear together.")
@@ -629,6 +762,10 @@ impl MatteApp {
                     );
                 }
             });
+            if open_dialog {
+                let ctx = ui.ctx().clone();
+                self.choose_source(&ctx);
+            }
             return;
         };
         let query = self.query.trim().to_lowercase();
@@ -659,12 +796,13 @@ impl MatteApp {
                 self.inspected = index;
             }
         }
-        let ready_indices: Vec<_> = indices
+        let custom = self.settings.custom_output;
+        let selectable_indices: Vec<_> = indices
             .iter()
             .copied()
-            .filter(|&index| scan.sequences[index].ready())
+            .filter(|&index| selectable(&scan.sequences[index], custom))
             .collect();
-        let selected = self.enabled.iter().filter(|enabled| **enabled).count();
+        let selected = self.included().len();
         ui.label(
             RichText::new(if query.is_empty() {
                 format!(
@@ -686,7 +824,15 @@ impl MatteApp {
         ui.add_space(10.0);
         if scan.sequences.is_empty() {
             ui.label("No matching EXR sequences found.");
-            ui.label("Place numbered EXRs in a source folder with _matte* sibling folders.");
+            ui.label(
+                RichText::new(
+                    "Place numbered EXRs in a source folder with _matte* sibling folders.",
+                )
+                .color(palette.muted),
+            );
+            for warning in &scan.warnings {
+                ui.label(RichText::new(warning).size(12.0).color(palette.warning));
+            }
             return;
         }
         let mut rows = Vec::new();
@@ -712,7 +858,25 @@ impl MatteApp {
                 }
             }
         }
-        let height = (ui.available_height() - 179.0).max(100.0);
+        egui::Panel::bottom("sequence-inspector-panel")
+            .resizable(true)
+            .default_size(150.0)
+            .size_range(84.0..=420.0)
+            .frame(Frame::new().inner_margin(Margin {
+                top: 10,
+                ..Margin::ZERO
+            }))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("sequence-inspector")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.inspector(ui, palette));
+            });
+        let Some(scan) = &self.scan else {
+            return;
+        };
+        let height =
+            (ui.available_height() - if indices.is_empty() { 30.0 } else { 6.0 }).max(80.0);
         let show_type = ui.available_width() > 620.0;
         let header_rect =
             egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 28.0));
@@ -736,18 +900,19 @@ impl MatteApp {
             .header(28.0, |mut header| {
                 header.col(|ui| {
                     ui.add_space(23.0);
-                    let mut all =
-                        !ready_indices.is_empty() && ready_indices.iter().all(|&i| self.enabled[i]);
+                    let mut all = !selectable_indices.is_empty()
+                        && selectable_indices.iter().all(|&i| self.enabled[i]);
                     if ui
                         .add_enabled(
-                            !self.processing && !ready_indices.is_empty(),
+                            !self.processing && !selectable_indices.is_empty(),
                             egui::Checkbox::without_text(&mut all),
                         )
                         .on_hover_text("Select all visible ready sequences")
                         .changed()
                     {
                         for &index in &indices {
-                            self.enabled[index] = all && scan.sequences[index].ready();
+                            self.enabled[index] =
+                                all && selectable(&scan.sequences[index], custom);
                         }
                     }
                     ui.label(
@@ -814,11 +979,23 @@ impl MatteApp {
                             {
                                 self.expanded.insert(index);
                             }
-                            ui.add_enabled(
-                                !self.processing && sequence.ready(),
-                                egui::Checkbox::without_text(&mut self.enabled[index]),
-                            )
-                            .on_hover_text("Include this sequence");
+                            let can_select = selectable(sequence, custom);
+                            let mut checked = self.enabled[index] && can_select;
+                            if ui
+                                .add_enabled(
+                                    !self.processing && can_select,
+                                    egui::Checkbox::without_text(&mut checked),
+                                )
+                                .on_hover_text("Include this sequence")
+                                .on_disabled_hover_text(if sequence.ready() {
+                                    "Outputs already exist beside this source. Choose a destination folder to embed it again."
+                                } else {
+                                    "Resolve the issues shown below before embedding."
+                                })
+                                .changed()
+                            {
+                                self.enabled[index] = checked;
+                            }
                             let response = ui.add(
                                 egui::Label::new(RichText::new(sequence.name()).size(13.0))
                                     .truncate()
@@ -894,9 +1071,14 @@ impl MatteApp {
                                 QueueRow::Source(index) => scan.sequences[index]
                                     .image
                                     .as_ref()
-                                    .map(|info| info.channels.join(", "))
+                                    .map(channel_summary)
                                     .unwrap_or_default(),
-                                QueueRow::Matte(_, _) => "Matte / R".into(),
+                                QueueRow::Matte(index, matte) => {
+                                    match scan.sequences[index].mattes[matte].sample_type() {
+                                        Some(kind) => format!("R · {}", kind.label()),
+                                        None => "R".into(),
+                                    }
+                                }
                                 _ => String::new(),
                             };
                             ui.add(
@@ -925,6 +1107,7 @@ impl MatteApp {
                         if let QueueRow::Sequence(index) = entry {
                             let sequence = &scan.sequences[index];
                             let counts = self.per_sequence.get(&sequence.folder);
+                            let included = self.enabled[index] && selectable(sequence, custom);
                             let (text, color) = if !sequence.ready() {
                                 ("Needs attention".to_owned(), palette.warning)
                             } else if let Some(counts) = counts {
@@ -938,38 +1121,65 @@ impl MatteApp {
                                         palette.accent,
                                     )
                                 }
-                            } else if sequence.existing_outputs > 0 && !self.settings.custom_output
-                            {
+                            } else if sequence.existing_outputs > 0 && !custom {
                                 ("Output exists".to_owned(), palette.warning)
-                            } else if self.processing && self.enabled[index] {
+                            } else if self.processing && included {
                                 ("Queued".to_owned(), palette.muted)
-                            } else if !self.enabled[index] {
+                            } else if !included {
                                 ("Excluded".to_owned(), palette.muted)
                             } else {
                                 ("Ready".to_owned(), palette.muted)
                             };
-                            ui.label(RichText::new(text).size(11.0).color(color));
+                            let status = ui.label(RichText::new(text).size(11.0).color(color));
+                            if !sequence.issues.is_empty() {
+                                status.on_hover_text(sequence.issues.join("\n"));
+                            } else if sequence.existing_outputs > 0 && !custom {
+                                status.on_hover_text(format!(
+                                    "{} of {} outputs already exist in {}",
+                                    sequence.existing_outputs,
+                                    sequence.files.len(),
+                                    sequence.output_folder(None).display()
+                                ));
+                            }
                         }
                     });
-                    if row.response().clicked() {
-                        match entry {
-                            QueueRow::Sequence(index)
-                            | QueueRow::Source(index)
-                            | QueueRow::Matte(index, _) => self.inspected = index,
-                            QueueRow::Group(_, _) => {}
+                    let response = row.response();
+                    let target = match entry {
+                        QueueRow::Sequence(index) | QueueRow::Source(index) => {
+                            Some((index, &scan.sequences[index].folder))
                         }
+                        QueueRow::Matte(index, matte) => {
+                            Some((index, &scan.sequences[index].mattes[matte].folder))
+                        }
+                        QueueRow::Group(_, _) => None,
+                    };
+                    if let Some((index, folder)) = target {
+                        if response.clicked() {
+                            self.inspected = index;
+                        }
+                        response.context_menu(|ui| {
+                            if ui.button(REVEAL_LABEL).clicked()
+                                && let Err(error) = open::that(folder)
+                            {
+                                self.error = Some(format!("Could not open folder: {error}"));
+                            }
+                            if ui.button("Copy path").clicked() {
+                                ui.ctx().copy_text(folder.display().to_string());
+                            }
+                            if !self.processing && selectable(&scan.sequences[index], custom) {
+                                ui.separator();
+                                if ui.button("Select only this sequence").clicked() {
+                                    self.enabled.iter_mut().for_each(|enabled| *enabled = false);
+                                    self.enabled[index] = true;
+                                }
+                            }
+                        });
                     }
                 });
             });
         if indices.is_empty() {
             ui.label(RichText::new("No sequences match this filter.").color(palette.muted));
         }
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(6.0);
-        egui::ScrollArea::vertical()
-            .id_salt("sequence-inspector")
-            .show(ui, |ui| self.inspector(ui, palette));
     }
 
     fn inspector(&mut self, ui: &mut Ui, palette: Palette) {
@@ -1002,16 +1212,35 @@ impl MatteApp {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Keep").color(palette.muted));
             if let Some(info) = &sequence.image {
+                let uniform = info.uniform_sample_type();
                 for channel in &info.channels {
-                    badge(ui, channel, palette.muted);
+                    let text = match uniform {
+                        Some(_) => channel.name.clone(),
+                        None => format!("{} · {}", channel.name, channel.sample_type.label()),
+                    };
+                    badge(ui, &text, palette.muted);
+                }
+                if let Some(kind) = uniform {
+                    ui.label(RichText::new(kind.label()).size(11.0).color(palette.muted));
                 }
             }
             ui.add_space(8.0);
             ui.label(RichText::new("Embed").color(palette.muted));
             match sequence.channel_names(&self.settings.matte_channel_name) {
                 Ok(names) => {
-                    for name in names {
-                        badge(ui, &name, palette.accent);
+                    for (name, matte) in names.iter().zip(&sequence.mattes) {
+                        let text = match matte.sample_type() {
+                            Some(kind) => format!("{name} · {}", kind.label()),
+                            None => name.clone(),
+                        };
+                        badge(ui, &text, palette.accent).on_hover_text(format!(
+                            "R from {}, kept at its source sample type",
+                            matte
+                                .folder
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                        ));
                     }
                 }
                 Err(error) => {
@@ -1059,8 +1288,14 @@ impl MatteApp {
                         for failure in &report.failures {
                             ui.label(
                                 RichText::new(format!(
-                                    "Frame {}: {}",
-                                    failure.frame, failure.error
+                                    "{} frame {}: {}",
+                                    failure
+                                        .sequence
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy(),
+                                    failure.frame,
+                                    failure.error
                                 ))
                                 .color(palette.warning),
                             );
@@ -1074,6 +1309,8 @@ impl MatteApp {
         section(ui, "Progress", palette);
         let (title, color) = if self.scanning {
             ("Scanning sequences…", palette.accent)
+        } else if self.quit_when_idle {
+            ("Closing after current frames…", palette.warning)
         } else if self.processing && self.stop.load(Ordering::Acquire) {
             ("Stopping after current frames…", palette.warning)
         } else if self.processing {
@@ -1136,10 +1373,10 @@ impl MatteApp {
                     egui::vec2(rect.width() * progress.min(1.0), rect.height()),
                 ),
                 3.0,
-                if self.report.as_ref().is_some_and(|report| report.success()) {
-                    palette.success
-                } else {
-                    palette.accent
+                match &self.report {
+                    Some(report) if report.success() => palette.success,
+                    Some(_) => palette.warning,
+                    None => palette.accent,
                 },
             );
         }
@@ -1187,7 +1424,7 @@ impl MatteApp {
                     format!(
                         "{} frames in {} selected sequences",
                         number(self.chosen_frames()),
-                        self.enabled.iter().filter(|enabled| **enabled).count()
+                        self.included().len()
                     )
                 } else {
                     "Scan a folder to prepare your sequences.".into()
@@ -1199,13 +1436,20 @@ impl MatteApp {
         if let Some(report) = &self.report {
             let note = if !report.replacement_errors.is_empty() {
                 "Review replacement errors in Batch details.".into()
-            } else if report.replaced.is_empty() {
-                format!("{} frame errors. Originals kept.", report.failures.len())
-            } else {
+            } else if !report.replaced.is_empty() {
                 format!(
-                    "{} sequences replaced. Originals moved to Trash.",
+                    "{} sequences replaced. Originals moved to {TRASH}.",
                     report.replaced.len()
                 )
+            } else if !report.failures.is_empty() {
+                format!(
+                    "{} frames failed; see Batch details. Originals kept.",
+                    number(report.failures.len())
+                )
+            } else if report.cancelled {
+                "Stopped. Finished frames were kept; originals untouched.".into()
+            } else {
+                "Every selected frame embedded. Originals untouched.".into()
             };
             ui.add_space(5.0);
             ui.label(RichText::new(note).size(11.0).color(if report.success() {
@@ -1351,19 +1595,8 @@ impl eframe::App for MatteApp {
         let ctx = ui.ctx().clone();
         let palette = Palette::new(self.settings.dark_mode);
         self.frames_drawn += 1;
-        if !self.busy() {
-            let dropped = ctx.input(|input| {
-                input
-                    .raw
-                    .dropped_files
-                    .first()
-                    .map(|file| file.path().to_path_buf())
-            });
-            if let Some(folder) = dropped.filter(|path| path.is_dir()) {
-                self.settings.last_folder_path = folder.display().to_string();
-                self.start_scan(&ctx);
-            }
-        }
+        self.shortcuts(&ctx);
+        self.dropped_files(&ctx);
         egui::Panel::top("header")
             .exact_size(50.0)
             .frame(
@@ -1387,14 +1620,50 @@ impl eframe::App for MatteApp {
                 if let Some(error) = self.error.clone() {
                     Frame::new()
                         .fill(palette.warning.gamma_multiply(0.12))
-                        .inner_margin(10)
+                        .stroke(Stroke::new(1.0, palette.warning.gamma_multiply(0.35)))
+                        .inner_margin(Margin::symmetric(10, 8))
                         .corner_radius(4)
                         .show(ui, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(RichText::new(error).color(palette.warning));
-                                if ui.small_button("Dismiss").clicked() {
-                                    self.error = None;
-                                }
+                            ui.set_min_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(icons::regular::WARNING_CIRCLE)
+                                        .font(egui::FontId::new(
+                                            16.0,
+                                            egui::FontFamily::Name(ICON_FONT.into()),
+                                        ))
+                                        .color(palette.warning),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if icon_button(
+                                            ui,
+                                            icons::regular::X,
+                                            "Dismiss",
+                                            egui::vec2(22.0, 22.0),
+                                            13.0,
+                                            palette.warning,
+                                            false,
+                                        )
+                                        .clicked()
+                                        {
+                                            self.error = None;
+                                        }
+                                        ui.with_layout(
+                                            egui::Layout::left_to_right(egui::Align::Center)
+                                                .with_main_wrap(true),
+                                            |ui| {
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(error).color(palette.warning),
+                                                    )
+                                                    .wrap(),
+                                                );
+                                            },
+                                        );
+                                    },
+                                );
                             });
                         });
                     ui.add_space(10.0);
@@ -1402,16 +1671,48 @@ impl eframe::App for MatteApp {
                 self.queue(ui, palette);
             });
         if self.confirm_replace {
-            egui::Modal::new(egui::Id::new("replace-confirmation")).show(&ctx, |ui| {
-                ui.set_width(440.0); ui.heading("Replace the selected original sequences?");
-                ui.label("After every frame embeds successfully, the app will publish the embedded sequences and move the original source and matte folders to Trash.");
+            let sequences = self.included().len();
+            let frames = self.chosen_frames();
+            let modal = egui::Modal::new(egui::Id::new("replace-confirmation")).show(&ctx, |ui| {
+                ui.set_width(440.0);
+                ui.heading("Replace the original sequences?");
+                ui.add_space(4.0);
+                ui.label(format!(
+                    "{} frames in {} sequences. After every frame embeds successfully, the embedded files take the original folder names and the original source and matte folders move to {TRASH}.",
+                    number(frames), sequences
+                ));
+                ui.add_space(4.0);
+                ui.label(RichText::new("If any frame fails or you stop the batch, originals stay in place.").size(12.0).color(palette.muted));
                 ui.add_space(14.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Keep originals").clicked() { self.confirm_replace = false; }
-                    if ui.button("Embed and replace").clicked() { self.confirm_replace = false; self.start_batch(&ctx); }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new(RichText::new("Embed and replace").strong().color(Color32::WHITE))
+                        .fill(Color32::from_rgb(176, 98, 22))).clicked() {
+                        self.confirm_replace = false;
+                        self.start_batch(&ctx);
+                    }
+                    if ui.button("Cancel").clicked() { self.confirm_replace = false; }
                 });
             });
+            if modal.should_close() {
+                self.confirm_replace = false;
+            }
         }
+        if ctx.input(|input| !input.raw.hovered_files.is_empty()) {
+            drop_overlay(&ctx, palette, self.busy());
+        }
+        let title = if self.processing && self.total > 0 {
+            format!(
+                "{TITLE} — {:.0}%",
+                100.0 * self.completed as f64 / self.total as f64
+            )
+        } else {
+            TITLE.to_owned()
+        };
+        if title != self.title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = title;
+        }
+        self.save_when_idle(&ctx);
         self.captures(&ctx);
         if self.busy() || self.capture_pending || (self.capture_dir.is_some() && !self.captured[0])
         {
@@ -1422,6 +1723,77 @@ impl eframe::App for MatteApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.persist();
     }
+}
+
+impl MatteApp {
+    fn shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.input_mut(|input| input.consume_shortcut(&FIND_SHORTCUT)) {
+            ctx.memory_mut(|memory| memory.request_focus(egui::Id::new(FILTER_ID)));
+        }
+        if self.busy() || self.confirm_replace {
+            return;
+        }
+        if ctx.input_mut(|input| input.consume_shortcut(&OPEN_SHORTCUT)) {
+            self.choose_source(ctx);
+        } else if ctx.input_mut(|input| input.consume_shortcut(&SCAN_SHORTCUT)) {
+            self.start_scan(ctx);
+        }
+    }
+
+    fn dropped_files(&mut self, ctx: &egui::Context) {
+        let Some(path) = ctx.input(|input| {
+            input
+                .raw
+                .dropped_files
+                .first()
+                .map(|file| file.path().to_path_buf())
+        }) else {
+            return;
+        };
+        if self.busy() {
+            self.error =
+                Some("Wait for the current scan or batch before choosing another folder.".into());
+        } else if path.is_dir() {
+            self.settings.last_folder_path = path.display().to_string();
+            self.start_scan(ctx);
+        } else {
+            self.error = Some(format!(
+                "Drop a folder rather than a file: {}",
+                path.display()
+            ));
+        }
+    }
+}
+
+fn drop_overlay(ctx: &egui::Context, palette: Palette, busy: bool) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("drop-overlay"),
+    ));
+    let rect = ctx.content_rect().shrink(12.0);
+    painter.rect(
+        rect,
+        8.0,
+        palette.background.gamma_multiply(0.86),
+        Stroke::new(2.0, if busy { palette.muted } else { palette.accent }),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        if busy {
+            "Wait for the current batch to finish"
+        } else {
+            "Drop a delivery folder to scan it"
+        },
+        egui::FontId::proportional(18.0),
+        if busy { palette.muted } else { palette.text },
+    );
+}
+
+/// Ready, and writable: outputs beside sources are never overwritten.
+fn selectable(sequence: &Sequence, custom_output: bool) -> bool {
+    sequence.ready() && (custom_output || sequence.existing_outputs == 0)
 }
 
 fn section(ui: &mut Ui, name: &str, palette: Palette) {
@@ -1458,7 +1830,7 @@ fn appearance_button(ui: &mut Ui, dark: bool, palette: Palette) -> egui::Respons
     )
 }
 
-fn badge(ui: &mut Ui, text: &str, color: Color32) {
+fn badge(ui: &mut Ui, text: &str, color: Color32) -> egui::Response {
     Frame::new()
         .fill(color.gamma_multiply(0.12))
         .stroke(Stroke::new(1.0, color.gamma_multiply(0.3)))
@@ -1466,7 +1838,65 @@ fn badge(ui: &mut Ui, text: &str, color: Color32) {
         .inner_margin(Margin::symmetric(6, 2))
         .show(ui, |ui| {
             ui.label(RichText::new(text).size(11.0).color(color));
-        });
+        })
+        .response
+}
+
+/// "B, G, R · half", or each channel's type when they differ.
+fn channel_summary(info: &ImageInfo) -> String {
+    match info.uniform_sample_type() {
+        Some(kind) => format!(
+            "{} · {}",
+            info.channels
+                .iter()
+                .map(|channel| channel.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            kind.label()
+        ),
+        None => info
+            .channels
+            .iter()
+            .map(|channel| format!("{} · {}", channel.name, channel.sample_type.label()))
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
+fn codec_label(codec: Codec, palette: Palette) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        codec.label(),
+        0.0,
+        egui::TextFormat::simple(egui::FontId::proportional(13.0), palette.text),
+    );
+    let note = if codec == Codec::default() {
+        "default"
+    } else if codec.lossy_note().is_some() {
+        "lossy"
+    } else {
+        ""
+    };
+    job.append(
+        note,
+        8.0,
+        egui::TextFormat {
+            valign: egui::Align::Center,
+            ..egui::TextFormat::simple(egui::FontId::proportional(11.0), palette.muted)
+        },
+    );
+    job
+}
+
+fn primary_button(label: &str, width: f32) -> egui::Button<'_> {
+    egui::Button::new((
+        egui::Atom::grow(),
+        RichText::new(label).strong().color(Color32::WHITE),
+        egui::Atom::grow(),
+    ))
+    .fill(Color32::from_rgb(44, 117, 205))
+    .stroke(Stroke::new(1.0, Color32::from_rgb(66, 137, 224)))
+    .min_size(egui::vec2(width, 34.0))
 }
 
 fn folder_button(ui: &mut Ui, label: &str, palette: Palette) -> egui::Response {

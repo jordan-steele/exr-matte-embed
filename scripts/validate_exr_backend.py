@@ -131,6 +131,16 @@ def half_red(path):
         file.close()
 
 
+def native_red(path):
+    """The matte's R description and samples at its own type; embedding must not convert it."""
+    description = channel_descriptions(read_header(path))["R"]
+    file = OpenEXR.InputFile(str(path))
+    try:
+        return description, file.channel("R", Imath.PixelType(description["type"]))
+    finally:
+        file.close()
+
+
 def verify(base_path, mattes, output_path, lossy=False):
     base_header, output_header = read_header(base_path), read_header(output_path)
     changed = [name for name, value in base_header.items()
@@ -163,9 +173,11 @@ def verify(base_path, mattes, output_path, lossy=False):
                                     "max_abs_error": float(np.max(np.abs(delta))),
                                     "rmse": float(np.sqrt(np.mean(delta * delta)))}
         for name, path in mattes.items():
-            if output_channels[name]["type"] != 1:
-                raise AssertionError(f"Expected a HALF matte: {name}")
-            if output.channel(name, Imath.PixelType(Imath.PixelType.HALF)) != half_red(path):
+            description, samples = native_red(path)
+            if output_channels[name] != description:
+                raise AssertionError(f"Matte {name} must keep its source R type and pLinear: "
+                                     f"{output_channels[name]} != {description}")
+            if output.channel(name, Imath.PixelType(description["type"])) != samples:
                 raise AssertionError(f"Matte pixels differ: {name}")
     finally:
         file.close()

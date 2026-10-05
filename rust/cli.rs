@@ -86,7 +86,15 @@ fn run(args: Args) -> Result<i32> {
                 sequence.name(),
                 sequence.files.len(),
                 channels
-                    .map(|channels| channels.join(", "))
+                    .map(|channels| channels
+                        .iter()
+                        .zip(&sequence.mattes)
+                        .map(|(channel, matte)| match matte.sample_type() {
+                            Some(kind) => format!("{channel} ({})", kind.label()),
+                            None => channel.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", "))
                     .unwrap_or_else(|error| error.to_string())
             );
             if args.verbose {

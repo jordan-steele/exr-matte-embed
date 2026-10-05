@@ -1,8 +1,10 @@
-use exr::prelude::*;
+use exr::{meta::attribute::SampleType, prelude::*};
 use exr_matte_embed::{
+    MatteInput,
     batch::{self, BatchOptions, Plan},
     codec::Codec,
-    sequences,
+    embed_file,
+    sequences::{self, SampleKind},
 };
 use std::{
     path::Path,
@@ -107,6 +109,56 @@ fn duplicate_frame_and_resolved_channel_collisions_are_rejected() {
         image(&extra.join(format!("extra.{frame}.exr")), 0.25);
     }
     assert!(!sequences::scan(root.path()).unwrap().sequences[0].ready());
+}
+
+#[test]
+fn separators_after_matte_do_not_reach_channel_names() {
+    for (suffix, expected) in [
+        ("", "DI_Matte"),
+        ("_", "DI_Matte"),
+        ("hero", "DI_Matte.hero"),
+        ("_hero", "DI_Matte.hero"),
+        ("-hero", "DI_Matte.hero"),
+        (".hero", "DI_Matte.hero"),
+        (" hero_", "DI_Matte.hero"),
+        ("_hero_left", "DI_Matte.hero_left"),
+        ("_r", "DI_Matte.matte_r"),
+    ] {
+        assert_eq!(
+            sequences::channel_name("DI_Matte", suffix),
+            expected,
+            "{suffix:?}"
+        );
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    fixtures(root.path());
+    let separated = root.path().join("SHOT_matte_fx");
+    std::fs::create_dir(&separated).unwrap();
+    for frame in [1000, 1001] {
+        image(&separated.join(format!("fx.{frame}.exr")), 0.25);
+    }
+    let scan = sequences::scan(root.path()).unwrap();
+    assert!(scan.sequences[0].ready(), "{:?}", scan.sequences[0].issues);
+    assert_eq!(
+        scan.sequences[0].channel_names("matte").unwrap(),
+        ["matte", "matte.hero", "matte.matte_r", "matte.fx"]
+    );
+
+    // Folders that differ only by a separator resolve to the same channel.
+    let duplicate = root.path().join("SHOT_matte_hero");
+    std::fs::create_dir(&duplicate).unwrap();
+    for frame in [1000, 1001] {
+        image(&duplicate.join(format!("hero.{frame}.exr")), 0.25);
+    }
+    let scan = sequences::scan(root.path()).unwrap();
+    assert!(!scan.sequences[0].ready());
+    assert!(
+        scan.sequences[0]
+            .issues
+            .iter()
+            .any(|issue| issue.contains("same channel"))
+    );
 }
 
 #[test]
@@ -333,6 +385,170 @@ fn a_later_corrupt_frame_prevents_all_replacement() {
             .join("SHOT_matte/SHOT_matte.0001000.exr")
             .exists()
     );
+}
+
+const WIDTH: usize = 9;
+const HEIGHT: usize = 7;
+
+/// Values that HALF cannot represent, so any conversion is detectable.
+fn float_samples(offset: f32) -> Vec<f32> {
+    (0..WIDTH * HEIGHT)
+        .map(|index| offset + index as f32 * 0.012_345_679)
+        .collect()
+}
+
+fn write_layer(path: &Path, channels: Vec<AnyChannel<FlatSamples>>) {
+    let layer = Layer::new(
+        (WIDTH, HEIGHT),
+        LayerAttributes::default(),
+        Encoding {
+            compression: Compression::PIZ,
+            blocks: Blocks::ScanLines,
+            line_order: LineOrder::Increasing,
+        },
+        AnyChannels::sort(channels.into_iter().collect()),
+    );
+    Image::from_layer(layer).write().to_file(path).unwrap();
+}
+
+fn channel(name: &str, samples: FlatSamples, linear: bool) -> AnyChannel<FlatSamples> {
+    AnyChannel {
+        quantize_linearly: linear,
+        ..AnyChannel::new(name, samples)
+    }
+}
+
+fn bits(samples: &FlatSamples) -> (SampleType, Vec<u32>) {
+    match samples {
+        FlatSamples::F16(values) => (
+            SampleType::F16,
+            values.iter().map(|value| value.to_bits().into()).collect(),
+        ),
+        FlatSamples::F32(values) => (
+            SampleType::F32,
+            values.iter().map(|value| value.to_bits()).collect(),
+        ),
+        FlatSamples::U32(values) => (SampleType::U32, values.clone()),
+    }
+}
+
+fn find<'a>(image: &'a FlatImage, name: &str) -> &'a AnyChannel<FlatSamples> {
+    image.layer_data[0]
+        .channel_data
+        .list
+        .iter()
+        .find(|channel| channel.name.to_string() == name)
+        .unwrap_or_else(|| panic!("missing channel {name}"))
+}
+
+/// Python 1.x read and wrote every channel as HALF. Mattes and base channels
+/// must now keep their source sample type, bits and pLinear flag exactly.
+#[test]
+fn mattes_and_base_channels_keep_source_sample_types() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("base.exr");
+    write_layer(
+        &base,
+        vec![
+            channel("R", FlatSamples::F32(float_samples(-2.0)), false),
+            channel(
+                "G",
+                FlatSamples::F16(float_samples(0.0).into_iter().map(f16::from_f32).collect()),
+                false,
+            ),
+            channel(
+                "B",
+                FlatSamples::U32((0..WIDTH * HEIGHT).map(|i| i as u32 * 7_919).collect()),
+                false,
+            ),
+            channel("A", FlatSamples::F32(float_samples(0.5)), true),
+        ],
+    );
+    let mattes = [
+        ("matte", FlatSamples::F32(float_samples(0.25)), false),
+        (
+            "matte.half",
+            FlatSamples::F16(float_samples(0.75).into_iter().map(f16::from_f32).collect()),
+            true,
+        ),
+        (
+            "matte.id",
+            FlatSamples::U32((0..WIDTH * HEIGHT).map(|i| u32::MAX - i as u32).collect()),
+            false,
+        ),
+    ];
+    let mut inputs = Vec::new();
+    for (name, samples, linear) in &mattes {
+        let path = root.path().join(format!("{name}.exr"));
+        write_layer(
+            &path,
+            vec![
+                channel("R", samples.clone(), *linear),
+                channel("G", FlatSamples::F32(float_samples(9.0)), false),
+            ],
+        );
+        inputs.push(MatteInput {
+            channel: (*name).into(),
+            path,
+        });
+    }
+    for codec in [Codec::None, Codec::Rle, Codec::Zip, Codec::Zips, Codec::Piz] {
+        let output = root.path().join(format!("out-{}.exr", codec.name()));
+        embed_file(&base, &inputs, &output, codec.into()).unwrap();
+        let written = read_all_flat_layers_from_file(&output).unwrap();
+        let source = read_all_flat_layers_from_file(&base).unwrap();
+        for original in &source.layer_data[0].channel_data.list {
+            let kept = find(&written, &original.name.to_string());
+            assert_eq!(bits(&kept.sample_data), bits(&original.sample_data));
+            assert_eq!(kept.quantize_linearly, original.quantize_linearly);
+        }
+        for (name, samples, linear) in &mattes {
+            let embedded = find(&written, name);
+            assert_eq!(
+                bits(&embedded.sample_data),
+                bits(samples),
+                "{name} with {codec:?}"
+            );
+            assert_eq!(embedded.quantize_linearly, *linear, "{name} pLinear");
+        }
+    }
+}
+
+#[test]
+fn scan_reports_source_sample_types_and_can_be_cancelled() {
+    let root = tempfile::tempdir().unwrap();
+    for folder in ["SHOT", "SHOT_matte", "SHOT_matteHero"] {
+        std::fs::create_dir(root.path().join(folder)).unwrap();
+    }
+    let half = || FlatSamples::F16(vec![f16::ONE; WIDTH * HEIGHT]);
+    for frame in [1000, 1001] {
+        write_layer(
+            &root.path().join(format!("SHOT/SHOT.{frame}.exr")),
+            ["B", "G", "R"]
+                .map(|name| channel(name, half(), false))
+                .into(),
+        );
+        write_layer(
+            &root.path().join(format!("SHOT_matte/m.{frame}.exr")),
+            vec![channel("R", half(), false)],
+        );
+        write_layer(
+            &root.path().join(format!("SHOT_matteHero/h.{frame}.exr")),
+            vec![channel("R", FlatSamples::F32(float_samples(0.0)), false)],
+        );
+    }
+    let scan = sequences::scan(root.path()).unwrap();
+    let sequence = &scan.sequences[0];
+    assert!(sequence.ready(), "{:?}", sequence.issues);
+    assert_eq!(
+        sequence.image.as_ref().unwrap().uniform_sample_type(),
+        Some(SampleKind::Half)
+    );
+    let kinds: Vec<_> = sequence.mattes.iter().map(|m| m.sample_type()).collect();
+    assert_eq!(kinds, [Some(SampleKind::Half), Some(SampleKind::Float)]);
+
+    let error = sequences::scan_until(root.path(), &AtomicBool::new(true)).unwrap_err();
+    assert!(error.to_string().contains("cancelled"));
 }
 
 #[test]

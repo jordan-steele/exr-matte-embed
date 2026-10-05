@@ -170,7 +170,7 @@ def warm_sources(jobs):
 def validate_outputs(jobs):
     import Imath
     import OpenEXR
-    from validate_exr_backend import channel_descriptions, half_red, read_header
+    from validate_exr_backend import channel_descriptions, native_red, read_header
 
     sizes, writer_removed = [], False
     for base, matte, output in jobs:
@@ -181,7 +181,8 @@ def validate_outputs(jobs):
             raise AssertionError(f"Changed metadata in {output}: {changed}")
         writer_removed |= "writer" in before and "writer" not in after
         channels, out_channels = channel_descriptions(before), channel_descriptions(after)
-        if set(out_channels) != set(channels) | {"matte"} or out_channels["matte"]["type"] != 1:
+        red_description, red_samples = native_red(matte)
+        if set(out_channels) != set(channels) | {"matte"} or out_channels["matte"] != red_description:
             raise AssertionError(f"Unexpected output channels: {output}")
         if after["compression"][1] != bytes([4]):
             raise AssertionError(f"Output is not PIZ: {output}")
@@ -193,7 +194,7 @@ def validate_outputs(jobs):
                 pixel_type = Imath.PixelType(description["type"])
                 if original.channel(name, pixel_type) != embedded.channel(name, pixel_type):
                     raise AssertionError(f"Changed {name} pixels: {output}")
-            if embedded.channel("matte", Imath.PixelType(Imath.PixelType.HALF)) != half_red(matte):
+            if embedded.channel("matte", Imath.PixelType(red_description["type"])) != red_samples:
                 raise AssertionError(f"Changed matte pixels: {output}")
         finally:
             original.close()

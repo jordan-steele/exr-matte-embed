@@ -9,7 +9,8 @@ cargo build --release --locked --no-default-features --bin exr-matte-embed-cli
 ## Usage
 
 ```sh
-# Preview matched sequences and resolved matte channels.
+# Preview matched sequences and resolved matte channels with their sample types,
+# e.g. "SHOT  378 frames  DI_Matte (half), DI_Matte.hero (float)".
 exr-matte-embed-cli "/path/to/Deliveries" --scan-only --matte-channel DI_Matte
 
 # Write lossless PIZ outputs beside sources in *_embedded folders.

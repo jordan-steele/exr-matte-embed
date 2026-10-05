@@ -21,16 +21,20 @@ default. `--compression` also accepts `none`, `rle`, `zip`, `zips`, `pxr24`,
 `b44`, `b44a`, `dwaa`, and `dwab`. ZIP maps explicitly to 16 scanlines and ZIPS
 to one scanline.
 
-The core retains all original channel types and metadata, takes each matte's
-red channel, and stores that matte as HALF. It replaces only explicitly named
-matte channels and keeps other existing mattes. Choosing lossy compression can
-change image samples. No color conversion is performed.
+The core retains all original channel types and metadata and takes each
+matte's red channel with its own sample type (HALF, FLOAT or UINT) and pLinear
+flag. Python 1.x read and wrote every channel as HALF; the Rust core converts
+nothing. It replaces only explicitly named matte channels and keeps other
+existing mattes. Choosing lossy compression can change image samples. No color
+conversion is performed.
 
 The backend accepts one flat scanline part with no channel subsampling. It
 rejects unsupported layouts before loading pixels and requires identical base
 and matte data windows, including their origins. It writes to a temporary file
 in the destination directory and publishes the completed file without replacing
-an existing destination.
+an existing destination. Frames are not flushed to disk one by one, which kept
+an `F_FULLFSYNC` per frame off the critical path on macOS; replacing originals
+flushes every output of a sequence before anything moves.
 
 ## Independent validation
 

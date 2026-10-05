@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Fixed
+- Embedded mattes keep the sample type (HALF, FLOAT or UINT) and pLinear flag of their source R channel. Python 1.x converted every channel to HALF, and the first Rust beta still converted mattes, so FLOAT mattes lost precision.
+- Codec threads are budgeted from the frame workers actually started, so batches with fewer frames than workers use every core (a two-frame batch ran 28% faster).
+- Preferences are saved once typing pauses instead of on every keystroke, removing a full disk flush from the UI thread.
+
+### Changed
+- Separators after `_matte` no longer reach channel names: `SHOT_matte_hero` embeds as `matte.hero` rather than Python 1.x's `matte._hero`. Folders that differ only by a separator are reported as a channel collision.
+- Frames are published atomically without a per-frame disk flush (about 4% faster on 4K PIZ deliveries); replacement flushes every output before moving originals.
+- Lossy codec warnings state exactly which sample types each codec changes.
+- Sequences whose outputs already exist beside the source start unselected and cannot be queued until a separate destination is chosen.
+
+### Added
+- Source, channel and matte sample types in the sequence table, inspector and CLI scan listing.
+- Keyboard shortcuts (open, rescan, filter), Enter-to-scan, scan cancellation, a drop overlay, row context menus, progress in the window title, and a Dock/taskbar alert when a background batch finishes.
+
 ## [2.0.0-beta.1] - 2026-10-02
 ### Changed
 - Ported the desktop application from Python/PySide to Rust/egui and the headless CLI to the same Rust batch engine.

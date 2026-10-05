@@ -1,22 +1,75 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use exr::{
-    meta::BlockDescription,
+    meta::{BlockDescription, attribute::SampleType},
     prelude::{MetaData, Vec2},
 };
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SampleKind {
+    Half,
+    Float,
+    Uint,
+}
+
+impl SampleKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Half => "half",
+            Self::Float => "float",
+            Self::Uint => "uint",
+        }
+    }
+}
+
+impl From<SampleType> for SampleKind {
+    fn from(sample_type: SampleType) -> Self {
+        match sample_type {
+            SampleType::F16 => Self::Half,
+            SampleType::F32 => Self::Float,
+            SampleType::U32 => Self::Uint,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelInfo {
+    pub name: String,
+    pub sample_type: SampleKind,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageInfo {
     pub width: usize,
     pub height: usize,
     pub origin: [i32; 2],
-    pub channels: Vec<String>,
+    pub channels: Vec<ChannelInfo>,
+}
+
+impl ImageInfo {
+    pub fn sample_type(&self, channel: &str) -> Option<SampleKind> {
+        self.channels
+            .iter()
+            .find(|info| info.name == channel)
+            .map(|info| info.sample_type)
+    }
+
+    /// The shared sample type, or `None` when channels mix types.
+    pub fn uniform_sample_type(&self) -> Option<SampleKind> {
+        let first = self.channels.first()?.sample_type;
+        self.channels
+            .iter()
+            .all(|info| info.sample_type == first)
+            .then_some(first)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +77,14 @@ pub struct MatteSequence {
     pub suffix: String,
     pub folder: PathBuf,
     pub files: BTreeMap<u64, PathBuf>,
+    /// Header of the first frame; embedded mattes keep its R sample type.
+    pub image: Option<ImageInfo>,
+}
+
+impl MatteSequence {
+    pub fn sample_type(&self) -> Option<SampleKind> {
+        self.image.as_ref()?.sample_type("R")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,7 +167,11 @@ pub fn validate_prefix(prefix: &str) -> Result<()> {
     Ok(())
 }
 
+/// Separators around a folder suffix are dropped, so `SHOT_matte_hero`,
+/// `SHOT_matte-hero` and `SHOT_matteHero` all become `{prefix}.hero`.
+/// Python 1.x kept them, producing names such as `matte._hero`.
 pub fn channel_name(prefix: &str, suffix: &str) -> String {
+    let suffix = suffix.trim_matches(['_', '-', '.', ' ']);
     if suffix.is_empty() {
         prefix.to_owned()
     } else if ["r", "g", "b", "a"].contains(&suffix) {
@@ -192,12 +257,20 @@ pub fn inspect_image(path: &Path) -> Result<ImageInfo> {
             .channels
             .list
             .iter()
-            .map(|c| c.name.to_string())
+            .map(|c| ChannelInfo {
+                name: c.name.to_string(),
+                sample_type: c.sample_type.into(),
+            })
             .collect(),
     })
 }
 
 pub fn scan(root: &Path) -> Result<ScanResult> {
+    scan_until(root, &AtomicBool::new(false))
+}
+
+/// Scan, returning an error early once `stop` is set.
+pub fn scan_until(root: &Path, stop: &AtomicBool) -> Result<ScanResult> {
     ensure!(root.is_dir(), "Folder does not exist: {}", root.display());
     let root = root.canonicalize()?;
     let mut result = ScanResult {
@@ -206,6 +279,7 @@ pub fn scan(root: &Path) -> Result<ScanResult> {
     };
     let mut grouped = BTreeMap::<PathBuf, Vec<(String, PathBuf)>>::new();
     for entry in WalkDir::new(&root).follow_links(false).sort_by_file_name() {
+        ensure!(!stop.load(Ordering::Relaxed), "Scan cancelled");
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
@@ -240,6 +314,7 @@ pub fn scan(root: &Path) -> Result<ScanResult> {
             .push((suffix.to_lowercase(), entry.path().to_owned()));
     }
     for (folder, matte_folders) in grouped {
+        ensure!(!stop.load(Ordering::Relaxed), "Scan cancelled");
         let mut sequence = Sequence {
             folder: folder.clone(),
             files: BTreeMap::new(),
@@ -281,6 +356,7 @@ pub fn scan(root: &Path) -> Result<ScanResult> {
                         suffix,
                         folder: matte_folder,
                         files,
+                        image: None,
                     });
                 }
                 Err(error) => sequence.issues.push(format!("{error:#}")),
@@ -295,11 +371,11 @@ pub fn scan(root: &Path) -> Result<ScanResult> {
                 Err(error) => sequence.issues.push(format!("{error:#}")),
             }
         }
-        for matte in &sequence.mattes {
+        for matte in &mut sequence.mattes {
             if let Some(first) = matte.files.values().next() {
                 match inspect_image(first) {
                     Ok(info) => {
-                        if !info.channels.iter().any(|name| name == "R") {
+                        if info.sample_type("R").is_none() {
                             sequence
                                 .issues
                                 .push(format!("Matte has no R channel: {}", first.display()));
@@ -313,20 +389,24 @@ pub fn scan(root: &Path) -> Result<ScanResult> {
                                 first.display()
                             ));
                         }
+                        matte.image = Some(info);
                     }
                     Err(error) => sequence.issues.push(format!("{error:#}")),
                 }
             }
         }
+        // Skip per-frame checks when no output folder exists; they are slow on network volumes.
         let output = sequence.output_folder(None);
-        sequence.existing_outputs = sequence
-            .files
-            .values()
-            .filter(|file| {
-                file.file_name()
-                    .is_some_and(|name| output.join(name).exists())
-            })
-            .count();
+        if output.exists() {
+            sequence.existing_outputs = sequence
+                .files
+                .values()
+                .filter(|file| {
+                    file.file_name()
+                        .is_some_and(|name| output.join(name).exists())
+                })
+                .count();
+        }
         result.sequences.push(sequence);
     }
     Ok(result)

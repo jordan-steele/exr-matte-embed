@@ -78,15 +78,16 @@ impl Plan {
             );
             let channels = sequence.channel_names(&options.matte_channel)?;
             let destination = sequence.output_folder(options.output_root.as_deref());
+            let destination_exists = destination.exists();
             ensure!(
-                !options.replace_originals || !destination.exists(),
+                !options.replace_originals || !destination_exists,
                 "Replacement needs a new output folder; {} already exists",
                 destination.display()
             );
             for (frame, base) in &sequence.files {
                 let output = destination.join(base.file_name().context("Missing filename")?);
                 ensure!(
-                    !output.exists(),
+                    !destination_exists || !output.exists(),
                     "Output already exists: {}. Choose a new destination",
                     output.display()
                 );
@@ -265,7 +266,8 @@ pub fn run(
     let successful = AtomicUsize::new(0);
     let failures = Mutex::new(Vec::new());
     let workers = plan.options.workers.min(plan.jobs.len()).max(1);
-    let codec_threads = (cpu_count() / plan.options.workers).max(1);
+    // Budget from the workers actually started so small batches still use every core.
+    let codec_threads = (cpu_count() / workers).max(1);
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
@@ -347,18 +349,22 @@ pub fn run(
 
 /// Publish before trashing. Failed publication restores the original folder;
 /// failed trashing leaves a named original in a retained backup directory.
+/// Frames are written without a per-frame flush, so every output is synced to
+/// disk here before any original moves.
 pub fn replace_sequence(
     sequence: &Sequence,
     send_to_trash: &impl Fn(&Path) -> Result<()>,
 ) -> Result<()> {
     let output = sequence.output_folder(None);
     for file in sequence.files.values() {
-        ensure!(
-            output
-                .join(file.file_name().context("Missing filename")?)
-                .is_file(),
-            "Incomplete replacement output"
-        );
+        let embedded = output.join(file.file_name().context("Missing filename")?);
+        ensure!(embedded.is_file(), "Incomplete replacement output");
+        // Write access lets Windows flush the file; nothing is truncated.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&embedded)
+            .and_then(|file| file.sync_all())
+            .with_context(|| format!("Flushing {} to disk", embedded.display()))?;
     }
     let parent = sequence.folder.parent().context("Source has no parent")?;
     let holding = tempfile::Builder::new()
